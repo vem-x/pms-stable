@@ -18,7 +18,11 @@
       "Bash(cat:*)",
       "Bash(git ls-tree:*)",
       "Bash(git rm:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git diff-tree:*)",
+      "Bash(git reset:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
