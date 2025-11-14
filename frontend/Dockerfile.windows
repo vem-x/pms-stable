@@ -2,16 +2,16 @@ FROM mcr.microsoft.com/windows/servercore:ltsc2019
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
-# Download and install Node.js
+# Download and install Node.js with PATH update
 RUN Invoke-WebRequest -Uri https://nodejs.org/dist/v20.11.1/node-v20.11.1-x64.msi -OutFile node.msi ; \
     Start-Process msiexec.exe -ArgumentList '/i', 'node.msi', '/quiet', '/norestart' -Wait ; \
-    Remove-Item node.msi -Force
+    Remove-Item node.msi -Force ; \
+    [Environment]::SetEnvironmentVariable('PATH', \"$env:PATH;C:\Program Files\nodejs\", [EnvironmentVariableTarget]::Machine)
 
-# Add Node to PATH
-ENV PATH="C:\\Program Files\\nodejs\\:${PATH}"
-
-# Verify installation
-RUN node --version && npm --version
+# Refresh PATH for current session and verify installation
+RUN $env:PATH = [System.Environment]::GetEnvironmentVariable('PATH', 'Machine') ; \
+    node --version ; \
+    npm --version
 
 WORKDIR /app
 
@@ -27,4 +27,4 @@ EXPOSE 3000
 ENV NODE_ENV=production
 
 # Start the app
-CMD ["powershell", "-NoProfile", "-Command", "npm start"]
+CMD ["powershell", "-NoProfile", "-Command", "npm", "start"]
