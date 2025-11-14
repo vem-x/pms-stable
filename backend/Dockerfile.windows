@@ -13,7 +13,8 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create uploads directory if it doesn't exist
-RUN powershell -Command "if (!(Test-Path 'uploads')) { New-Item -ItemType Directory -Path 'uploads' }"
+RUN powershell -Command "if (!(Test-Path uploads)) { New-Item uploads -ItemType Directory | Out-Null }"
+
 
 # Expose port
 EXPOSE 8000
