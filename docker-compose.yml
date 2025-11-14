@@ -38,12 +38,7 @@ services:
     networks:
       - pms_network
     # Health check to ensure database is reachable
-    healthcheck:
-      test: ["CMD", "python", "-c", "import psycopg2; psycopg2.connect('${DATABASE_URL}')"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
+ 
 
   frontend:
     build:
