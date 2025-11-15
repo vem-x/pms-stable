@@ -1,12 +1,22 @@
+# Stage 1: Install Node.js on ServerCore
+FROM mcr.microsoft.com/windows/servercore:ltsc2019 AS nodeinstaller
+
+SHELL ["powershell", "-Command", "$ErrorActionPreference='Stop';"]
+
+# Install Node.js
+RUN Invoke-WebRequest -Uri https://nodejs.org/dist/v20.11.1/node-v20.11.1-x64.msi -OutFile node.msi ; \
+    Start-Process msiexec.exe -ArgumentList '/i','node.msi','/quiet','/norestart' -Wait ; \
+    Remove-Item node.msi
+
+# Stage 2: Use NanoServer for smaller runtime
 FROM mcr.microsoft.com/windows/nanoserver:ltsc2019
 
-# Copy Node.js from official image
-COPY --from=mcr.microsoft.com/windows/servercore:ltsc2019 ["C:/Program Files/nodejs", "C:/Program Files/nodejs"]
+# Copy Node.js from previous stage
+COPY --from=nodeinstaller ["C:/Program Files/nodejs", "C:/Program Files/nodejs"]
 
-# Set PATH for Node.js
-ENV PATH="C:\\Program Files\\nodejs;%PATH%"
+# Set environment variables
+ENV PATH="C:\Program Files\nodejs;${PATH}"
 
-# Set working directory
 WORKDIR /app
 
 # Copy package files
@@ -15,14 +25,13 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --legacy-peer-deps
 
-# Copy application files
+# Copy application code
 COPY . .
 
-# Build the application
+# Build Next.js
 RUN npm run build
 
-# Expose port
 EXPOSE 3000
 
-# Start the application
+# Start Next.js
 CMD ["node", "./node_modules/next/dist/bin/next", "start", "-p", "3000", "-H", "0.0.0.0"]
