@@ -22,8 +22,9 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install --legacy-peer-deps
+# Install dependencies without modifying package-lock.json
+# This prevents the EPERM error
+RUN npm install --legacy-peer-deps --package-lock=false
 
 # Copy application code
 COPY . .
