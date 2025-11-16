@@ -1,5 +1,5 @@
-# Stage 1: Install Node.js on ServerCore
-FROM mcr.microsoft.com/windows/servercore:ltsc2019 AS nodeinstaller
+# Stage 1: Build stage with ServerCore (has full npm support)
+FROM mcr.microsoft.com/windows/servercore:ltsc2019 AS builder
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference='Stop';"]
 
@@ -8,29 +8,44 @@ RUN Invoke-WebRequest -Uri https://nodejs.org/dist/v20.11.1/node-v20.11.1-x64.ms
     Start-Process msiexec.exe -ArgumentList '/i','node.msi','/quiet','/norestart' -Wait ; \
     Remove-Item node.msi
 
-# Stage 2: Use NanoServer for smaller runtime
+# Refresh PATH
+RUN $env:PATH = [System.Environment]::GetEnvironmentVariable('PATH','Machine') + ';C:\Program Files\nodejs' ; \
+    [Environment]::SetEnvironmentVariable('PATH', $env:PATH, [EnvironmentVariableTarget]::Machine)
+
+# Verify installation
+RUN node --version ; npm --version
+
+WORKDIR /app
+
+# Copy package files and install dependencies
+COPY package*.json ./
+RUN npm install --legacy-peer-deps --package-lock=false
+
+# Copy application code
+COPY . .
+
+# Build Next.js application
+RUN npm run build
+
+# Stage 2: Runtime stage with NanoServer (smaller image)
 FROM mcr.microsoft.com/windows/nanoserver:ltsc2019
 
-# Copy Node.js from previous stage
-COPY --from=nodeinstaller ["C:/Program Files/nodejs", "C:/Program Files/nodejs"]
+# Copy Node.js from builder stage
+COPY --from=builder ["C:/Program Files/nodejs", "C:/Program Files/nodejs"]
 
 # Set environment variables
 ENV PATH="C:\Program Files\nodejs;${PATH}"
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy node_modules from builder stage
+COPY --from=builder /app/node_modules ./node_modules
 
-# Install dependencies without modifying package-lock.json
-# This prevents the EPERM error
-RUN npm install --legacy-peer-deps --package-lock=false
-
-# Copy application code
-COPY . .
-
-# Build Next.js
-RUN npm run build
+# Copy built application and necessary files
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/next.config.* ./
 
 EXPOSE 3000
 
