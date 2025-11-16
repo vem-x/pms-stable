@@ -790,7 +790,7 @@ function InitiativeDetailModal({ initiative, isOpen, onClose, onEdit, onDelete, 
     }
 
     fetchSubmission()
-  }, [initiative, isOpen])
+  }, [initiative, isOpen, canUserReview])
 
   if (!initiative) return null
 

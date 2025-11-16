@@ -661,7 +661,7 @@ function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit }) {
           <DialogHeader>
             <DialogTitle>Update Goal Progress</DialogTitle>
             <DialogDescription>
-              Update the progress for "<strong>{goal?.title}</strong>"
+              Update the progress for &quot;<strong>{goal?.title}</strong>&quot;
             </DialogDescription>
           </DialogHeader>
 
@@ -971,7 +971,10 @@ export default function GoalsPage() {
   const canEditGoals = usePermission("goal_edit")
   const canUpdateProgress = usePermission("goal_progress_update")
   const canApproveGoals = usePermission("goal_approve")
-  const canCreateOrganizationalGoals = usePermission("goal_create_yearly") || usePermission("goal_create_quarterly") || usePermission("goal_create_departmental")
+  const canCreateYearly = usePermission("goal_create_yearly")
+  const canCreateQuarterly = usePermission("goal_create_quarterly")
+  const canCreateDepartmental = usePermission("goal_create_departmental")
+  const canCreateOrganizationalGoals = canCreateYearly || canCreateQuarterly || canCreateDepartmental
 
   // Everyone can access goals page - permissions checked for specific actions
 

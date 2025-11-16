@@ -709,7 +709,7 @@ function TaskDetailModal({ task, isOpen, onClose, onEdit, onDelete, onUpdateStat
     }
 
     fetchSubmission()
-  }, [task, isOpen])
+  }, [task, isOpen, canUserReview])
 
   if (!task) return null
 

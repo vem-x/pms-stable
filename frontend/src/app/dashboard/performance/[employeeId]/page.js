@@ -34,7 +34,7 @@ export default function EmployeeScorecardPage() {
     if (params.employeeId && cycleId) {
       fetchEmployeeScorecard()
     }
-  }, [params.employeeId, cycleId])
+  }, [params.employeeId, cycleId, fetchEmployeeScorecard])
 
   const fetchEmployeeScorecard = async () => {
     try {

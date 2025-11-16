@@ -48,7 +48,7 @@ export default function ForgotPasswordPage() {
           <CardContent>
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
-                <p className="font-medium mb-1">What's next?</p>
+                <p className="font-medium mb-1">What&apos;s next?</p>
                 <ul className="list-disc list-inside space-y-1 text-xs">
                   <li>Check your email inbox and spam folder</li>
                   <li>Click the reset link in the email</li>
@@ -74,7 +74,7 @@ export default function ForgotPasswordPage() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Forgot Password?</CardTitle>
           <CardDescription className="mt-2">
-            Enter your email address and we'll send you a link to reset your password
+            Enter your email address and we&apos;ll send you a link to reset your password
           </CardDescription>
         </CardHeader>
         <CardContent>

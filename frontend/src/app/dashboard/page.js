@@ -642,7 +642,7 @@ function EmployeeDashboard({ user }) {
           Welcome back, {user?.first_name || user?.name?.split(' ')[0]}
         </h1>
         <p className="text-gray-500 mt-1">
-          Here's an overview of your performance and tasks
+          Here&apos;s an overview of your performance and tasks
         </p>
       </div>
 

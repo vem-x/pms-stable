@@ -142,7 +142,7 @@ function UserForm({ user, isOpen, onClose, onSubmit }) {
     }
 
     fetchSupervisors()
-  }, [formData.organization_id, formData.level])
+  }, [formData.organization_id, formData.level, user?.id])
 
   const handleSubmit = (e) => {
     e.preventDefault()

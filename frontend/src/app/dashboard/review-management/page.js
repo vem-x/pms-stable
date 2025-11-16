@@ -822,7 +822,7 @@ function QuestionsManagementDialog({ open, onClose, trait, questions, onAddQuest
               <FileText className="w-12 h-12 mx-auto text-gray-400 mb-4" />
               <h4 className="text-lg font-medium text-gray-900 mb-2">No Questions Added</h4>
               <p className="text-gray-500 mb-4">
-                This trait doesn't have any questions yet. Add questions to use this trait in review cycles.
+                This trait doesn&apos;t have any questions yet. Add questions to use this trait in review cycles.
               </p>
               <Button onClick={onAddQuestion}>
                 <Plus className="w-4 h-4 mr-2" />

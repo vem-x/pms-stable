@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from "react"
+import NextImage from "next/image"
 import { Upload, X, File, FileText, Image, Video, Music } from "lucide-react"
 import { Button } from "./button"
 import { Label } from "./label"
@@ -204,6 +205,7 @@ export function FileUpload({
                 {/* Preview (for images) */}
                 {fileWrapper.preview && (
                   <div className="flex-shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={fileWrapper.preview}
                       alt={`Preview of ${fileWrapper.name}`}

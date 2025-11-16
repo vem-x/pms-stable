@@ -43,7 +43,7 @@ export default function ReviewCycleDetailPage() {
         fetchReviews()
       }
     }
-  }, [cycleId, cycle?.status])
+  }, [cycleId, cycle?.status, fetchCycleDetails, fetchReviews])
 
   const fetchCycleDetails = async () => {
     try {

@@ -28,7 +28,7 @@ export default function AssignmentReviewPage() {
     if (assignmentId) {
       fetchAssignment()
     }
-  }, [assignmentId])
+  }, [assignmentId, fetchAssignment])
 
   const fetchAssignment = async () => {
     try {

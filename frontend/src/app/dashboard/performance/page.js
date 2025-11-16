@@ -60,7 +60,7 @@ export default function PerformanceManagementPage() {
     if (selectedCycleId || (!cyclesLoading && cycles.length > 0)) {
       fetchPerformanceData()
     }
-  }, [selectedCycleId, departmentFilter, cyclesLoading])
+  }, [selectedCycleId, departmentFilter, cyclesLoading, cycles.length, fetchPerformanceData])
 
   const fetchCycles = async () => {
     try {
