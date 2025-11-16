@@ -1,5 +1,5 @@
 # Wait for system to fully boot
-Start-Sleep -Seconds 15
+Start-Sleep -Seconds 20
 
 # Permanently set PATH (in case it's lost)
 $npmPath = "C:\Users\vem\AppData\Roaming\npm"
@@ -14,23 +14,25 @@ foreach ($p in $paths) {
     }
 }
 
-# Change directory
-Set-Location C:\Users\vem\pms-stable
+# Log file
+$logFile = "C:\Users\vem\pms-stable\pm2-startup.log"
+$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
-# Resurrect saved PM2 processes
 try {
-    pm2 resurrect
+    # Start backend directly from ecosystem file
+    Set-Location C:\Users\vem\pms-stable\backend
+    pm2 start ecosystem.config.js
+    Add-Content -Path $logFile -Value "$timestamp - Backend started from ecosystem.config.js"
     
-    # Log success
-    $logFile = "C:\Users\vem\pms-stable\pm2-startup.log"
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Add-Content -Path $logFile -Value "$timestamp - PM2 processes started successfully"
+    # Start frontend directly from ecosystem file
+    Set-Location C:\Users\vem\pms-stable\frontend
+    pm2 start ecosystem.config.js
+    Add-Content -Path $logFile -Value "$timestamp - Frontend started from ecosystem.config.js"
     
-    # Show status
-    pm2 list
+    # Save PM2 state for good measure
+    pm2 save --force
+    Add-Content -Path $logFile -Value "$timestamp - PM2 state saved"
+    
 } catch {
-    # Log error
-    $logFile = "C:\Users\vem\pms-stable\pm2-startup.log"
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Add-Content -Path $logFile -Value "$timestamp - ERROR: $_"
 }
