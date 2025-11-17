@@ -22,7 +22,8 @@
       "Bash(git diff-tree:*)",
       "Bash(git reset:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(pip install:*)"
     ],
     "deny": [],
     "ask": []

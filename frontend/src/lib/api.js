@@ -34,8 +34,10 @@ function getAuthToken() {
 function setAuthToken(token) {
   Cookies.set(TOKEN_COOKIE_NAME, token, {
     expires: TOKEN_EXPIRY_DAYS,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
+    // Disable secure flag for HTTP deployments (change to true when using HTTPS)
+    secure: false,
+    // Use 'lax' instead of 'strict' for IP-based deployments
+    sameSite: 'lax'
   })
 }
 
@@ -196,7 +198,12 @@ export const auth = {
     }
     const response = await POST('/api/auth/login', loginData)
     if (response.access_token) {
+      console.log('Setting auth token after login')
       setAuthToken(response.access_token)
+
+      // Verify token was set
+      const storedToken = getAuthToken()
+      console.log('Token stored successfully:', !!storedToken)
 
       // Store complete session data in localStorage with role version
       const sessionData = {
