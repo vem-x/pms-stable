@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from decouple import config
 
-DATABASE_URL = config("DATABASE_URL", default="postgresql://postgres:postgres@localhost:5432/pms_db")
+DATABASE_URL = config("DATABASE_URL", default="postgresql://pms_user:pms_password@localhost:5432/pms_db")
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
