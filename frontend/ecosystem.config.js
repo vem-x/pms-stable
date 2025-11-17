@@ -7,8 +7,8 @@ module.exports = {
     cwd: 'C:/Users/vem/pms-stable/frontend',
     env: {
       NODE_ENV: 'production',
-      NEXT_PUBLIC_API_URL: 'http://localhost:8000/api',
-      NEXT_PUBLIC_WS_URL: 'ws://localhost:8000/ws'
+      NEXT_PUBLIC_API_URL: 'http://160.226.0.67/:8000/api',
+      NEXT_PUBLIC_WS_URL: 'ws://160.226.0.67/:8000/ws'
     },
     autorestart: true,
     watch: false,
