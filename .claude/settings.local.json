@@ -23,7 +23,10 @@
       "Bash(git reset:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(pg_ctl status:*)",
+      "Bash(del \"C:\\Users\\DELL\\makp\\dev\\PMS\\backend\\start-backend-local.ps1\")",
+      "Bash(del \"C:\\Users\\DELL\\makp\\dev\\PMS\\backend\\test_goal_validator.py\")"
     ],
     "deny": [],
     "ask": []

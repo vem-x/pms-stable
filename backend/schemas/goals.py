@@ -26,16 +26,22 @@ class GoalBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     type: GoalType
-    evaluation_method: Optional[str] = Field(None, max_length=255)
-    difficulty_level: Optional[int] = Field(None, ge=1, le=5)
-    start_date: date
-    end_date: date
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
     quarter: Optional[Quarter] = None  # Required for INDIVIDUAL goals
     year: Optional[int] = None  # Required for INDIVIDUAL goals
 
+    @validator('start_date', 'end_date', pre=True)
+    def empty_string_to_none(cls, v):
+        # Convert empty strings to None for optional date fields
+        if v == "" or v is None:
+            return None
+        return v
+
     @validator('end_date')
     def validate_dates(cls, v, values):
-        if 'start_date' in values and v <= values['start_date']:
+        # Only validate if both dates are provided
+        if v and 'start_date' in values and values['start_date'] and v <= values['start_date']:
             raise ValueError('End date must be after start date')
         return v
 
@@ -58,10 +64,15 @@ class GoalCreate(GoalBase):
 class GoalUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
-    evaluation_method: Optional[str] = Field(None, max_length=255)
-    difficulty_level: Optional[int] = Field(None, ge=1, le=5)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+
+    @validator('start_date', 'end_date', pre=True)
+    def empty_string_to_none(cls, v):
+        # Convert empty strings to None for optional date fields
+        if v == "" or v is None:
+            return None
+        return v
 
 class GoalProgressUpdate(BaseModel):
     new_percentage: int = Field(..., ge=0, le=100)
@@ -143,11 +154,41 @@ class FreezeGoalsRequest(BaseModel):
     """Freeze all goals for a specific quarter"""
     quarter: Quarter
     year: int
+    scheduled_unfreeze_date: Optional[datetime] = None  # When to auto-unfreeze
+
+class UnfreezeGoalsRequest(BaseModel):
+    """Unfreeze all goals for a specific quarter"""
+    quarter: Quarter
+    year: int
+    is_emergency_override: bool = False
+    emergency_reason: Optional[str] = None
+
+    @validator('emergency_reason')
+    def validate_emergency_reason(cls, v, values):
+        if 'is_emergency_override' in values and values['is_emergency_override'] and not v:
+            raise ValueError('Emergency reason is required for emergency overrides')
+        return v
 
 class FreezeGoalsResponse(BaseModel):
-    """Response after freezing goals"""
-    frozen_count: int
+    """Response after freezing/unfreezing goals"""
+    affected_count: int
     message: str
+
+class GoalFreezeLog(BaseModel):
+    """Freeze/unfreeze audit log entry"""
+    id: uuid.UUID
+    action: str
+    quarter: Quarter
+    year: int
+    affected_goals_count: int
+    scheduled_unfreeze_date: Optional[datetime]
+    is_emergency_override: bool
+    emergency_reason: Optional[str]
+    performer_name: Optional[str]
+    performed_at: datetime
+
+    class Config:
+        from_attributes = True
 
 # Update forward references
 GoalWithChildren.model_rebuild()

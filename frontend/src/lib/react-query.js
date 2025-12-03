@@ -381,8 +381,9 @@ export function useCreateGoal() {
 
   return useMutation({
     mutationFn: goals.create,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOALS })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOALS })
+      await queryClient.refetchQueries({ queryKey: QUERY_KEYS.GOALS })
       toast.success('Goal created successfully')
     },
   })
@@ -460,6 +461,73 @@ export function useFreezeGoalsQuarter() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOALS })
       toast.success(data.message || 'Goals frozen successfully')
+    },
+  })
+}
+
+export function useUnfreezeGoalsQuarter() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: goals.unfreezeQuarter,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOALS })
+      toast.success(data.message || 'Goals unfrozen successfully')
+    },
+  })
+}
+
+export function useGoalFreezeLogs() {
+  return useQuery({
+    queryKey: ['goals', 'freeze-logs'],
+    queryFn: goals.getFreezeLogs,
+  })
+}
+
+export function useSuperviseeGoals() {
+  return useQuery({
+    queryKey: ['goals', 'supervisees'],
+    queryFn: goals.getSuperviseeGoals,
+  })
+}
+
+export function useCreateGoalForSupervisee() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: goals.createForSupervisee,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOALS })
+      await queryClient.invalidateQueries({ queryKey: ['goals', 'supervisees'] })
+      await queryClient.refetchQueries({ queryKey: QUERY_KEYS.GOALS })
+      await queryClient.refetchQueries({ queryKey: ['goals', 'supervisees'] })
+      toast.success('Goal created for team member successfully')
+    },
+  })
+}
+
+export function useRespondToGoal() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, ...data }) => goals.respond(id, data),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOALS })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOAL(variables.id) })
+      toast.success(variables.accepted ? 'Goal accepted successfully' : 'Goal declined')
+    },
+  })
+}
+
+export function useRequestGoalChange() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, changeRequest }) => goals.requestChange(id, changeRequest),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOALS })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOAL(variables.id) })
+      toast.success('Change request submitted successfully')
     },
   })
 }

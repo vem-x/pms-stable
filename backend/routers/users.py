@@ -373,6 +373,10 @@ async def get_user(
     if not permission_service.user_can_access_organization(requester, user.organization_id):
         raise HTTPException(status_code=403, detail="Cannot access this user")
 
+    # Get supervisees
+    supervisees = db.query(User).filter(User.supervisor_id == user.id).all()
+    supervisees_list = [UserSchema(**enhance_user_with_supervisor(supervisee, db)) for supervisee in supervisees]
+
     return UserWithRelations(
         **user.__dict__,
         organization={
@@ -384,8 +388,61 @@ async def get_user(
             "id": str(user.role.id),
             "name": user.role.name,
             "permissions": user.role.permissions
-        }
+        },
+        supervisees=supervisees_list
     )
+
+@router.get("/me/supervisees", response_model=List[UserSchema])
+async def get_my_supervisees(
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get list of users supervised by the current user
+    Returns all users where supervisor_id equals current user's ID
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get all supervisees
+    supervisees = db.query(User).filter(User.supervisor_id == user.id).all()
+
+    # Enhance with supervisor information
+    enhanced_supervisees = [UserSchema(**enhance_user_with_supervisor(supervisee, db)) for supervisee in supervisees]
+
+    return enhanced_supervisees
+
+@router.get("/{user_id}/supervisees", response_model=List[UserSchema])
+async def get_user_supervisees(
+    user_id: uuid.UUID,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    permission_service: UserPermissions = Depends(get_permission_service)
+):
+    """
+    Get list of users supervised by a specific user
+    Requires scope access to the user's organization
+    """
+    requester = db.query(User).filter(User.id == current_user.user_id).first()
+    if not requester:
+        raise HTTPException(status_code=404, detail="Requester not found")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check scope access
+    if not permission_service.user_can_access_organization(requester, user.organization_id):
+        raise HTTPException(status_code=403, detail="Cannot access this user")
+
+    # Get all supervisees
+    supervisees = db.query(User).filter(User.supervisor_id == user.id).all()
+
+    # Enhance with supervisor information
+    enhanced_supervisees = [UserSchema(**enhance_user_with_supervisor(supervisee, db)) for supervisee in supervisees]
+
+    return enhanced_supervisees
 
 @router.put("/{user_id}", response_model=UserSchema)
 async def update_user(

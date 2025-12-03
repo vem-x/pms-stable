@@ -52,6 +52,12 @@ const navigationItems = [
     permission: null,
   },
   {
+    title: "Goals",
+    url: "/dashboard/goals",
+    icon: Target,
+    permission: null,
+  },
+  {
     title: "Calendar",
     url: "/dashboard/calendar",
     icon: Calendar,
@@ -85,10 +91,10 @@ const managementItems = [
     permission: "role_create",
   },
   {
-    title: "Goals",
-    url: "/dashboard/goals",
+    title: "Goals Management",
+    url: "/dashboard/goals-management",
     icon: Target,
-    permission: "goal_view_all",
+    permission: "goal_create_yearly",
   },
   {
     title: "Review Management",

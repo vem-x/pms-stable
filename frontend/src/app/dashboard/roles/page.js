@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Plus, Shield, Users, MoreHorizontal, Edit, Trash2, Eye, Copy, Settings } from "lucide-react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -69,58 +69,14 @@ const scopeOverrideOptions = {
   }
 }
 
-// Permission categories for organized display
-const permissionCategories = {
-  'Organization Management': [
-    'organization_create',
-    'organization_edit',
-    'organization_delete',
-    'organization_view_all'
-  ],
-  'User Management': [
-    'user_create',
-    'user_edit',
-    'user_suspend',
-    'user_activate',
-    'user_archive',
-    'user_view_all',
-    'user_history_view'
-  ],
-  'Role Management': [
-    'role_create',
-    'role_edit',
-    'role_delete',
-    'role_assign',
-    'role_view_all'
-  ],
-  'Goal Management': [
-    'goal_create_yearly',
-    'goal_create_quarterly',
-    'goal_create_departmental',
-    'goal_edit',
-    'goal_progress_update',
-    'goal_status_change',
-    'goal_view_all'
-  ],
-  'Task Management': [
-    'task_create',
-    'task_assign',
-    'task_edit',
-    'task_review',
-    'task_view_all',
-    'task_extend_deadline',
-    'task_delete'
-  ],
-  'System Administration': [
-    'system_admin',
-    'reports_generate',
-    'audit_access',
-    'notification_manage',
-    'backup_access'
-  ]
+// Helper to format permission display names
+const formatPermissionName = (permission) => {
+  return permission.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
 }
 
 function RoleForm({ role, isOpen, onClose, onSubmit }) {
+  const { data: permissionGroups = {}, isLoading: permissionsLoading } = usePermissions()
+
   const [formData, setFormData] = useState({
     name: role?.name || "",
     description: role?.description || "",
@@ -129,7 +85,27 @@ function RoleForm({ role, isOpen, onClose, onSubmit }) {
     permissions: role?.permissions || []
   })
 
-  const { data: availablePermissions = {} } = usePermissions()
+  // Update form when role changes (for editing)
+  useEffect(() => {
+    if (role) {
+      setFormData({
+        name: role.name || "",
+        description: role.description || "",
+        is_leadership: role.is_leadership || false,
+        scope_override: role.scope_override || "none",
+        permissions: role.permissions || []
+      })
+    } else {
+      // Reset form when no role (creating new)
+      setFormData({
+        name: "",
+        description: "",
+        is_leadership: false,
+        scope_override: "none",
+        permissions: []
+      })
+    }
+  }, [role, isOpen])
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -260,53 +236,62 @@ function RoleForm({ role, isOpen, onClose, onSubmit }) {
 
                 <Separator className="my-4" />
 
-                <div className="space-y-6">
-                  {Object.entries(permissionCategories).map(([category, permissions]) => {
-                    const categoryPermissions = permissions.filter(p =>
-                      availablePermissions[p] || permissions.includes(p)
-                    )
-                    const selectedCount = categoryPermissions.filter(p =>
-                      formData.permissions.includes(p)
-                    ).length
-                    const allSelected = selectedCount === categoryPermissions.length
+                {permissionsLoading ? (
+                  <div className="space-y-4">
+                    <Skeleton className="h-20 w-full" />
+                    <Skeleton className="h-20 w-full" />
+                    <Skeleton className="h-20 w-full" />
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {Object.entries(permissionGroups).map(([groupKey, groupData]) => {
+                      const categoryPermissions = groupData.permissions || []
+                      const selectedCount = categoryPermissions.filter(p =>
+                        formData.permissions.includes(p)
+                      ).length
+                      const allSelected = selectedCount === categoryPermissions.length && categoryPermissions.length > 0
 
-                    return (
-                      <div key={category} className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-medium text-sm">{category}</h4>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">
-                              {selectedCount}/{categoryPermissions.length}
-                            </span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => selectAllInCategory(category, categoryPermissions)}
-                            >
-                              {allSelected ? 'Deselect All' : 'Select All'}
-                            </Button>
+                      return (
+                        <div key={groupKey} className="space-y-3 p-4 border rounded-lg bg-gray-50">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="font-medium text-sm">{groupData.name}</h4>
+                              <p className="text-xs text-muted-foreground">{groupData.description}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">
+                                {selectedCount}/{categoryPermissions.length}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => selectAllInCategory(groupData.name, categoryPermissions)}
+                              >
+                                {allSelected ? 'Deselect All' : 'Select All'}
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-2 mt-3">
+                            {categoryPermissions.map((permission) => (
+                              <div key={permission} className="flex items-center space-x-2 bg-white p-2 rounded">
+                                <Checkbox
+                                  id={permission}
+                                  checked={formData.permissions.includes(permission)}
+                                  onCheckedChange={(checked) => handlePermissionChange(permission, checked)}
+                                />
+                                <Label htmlFor={permission} className="text-sm flex-1 cursor-pointer">
+                                  {formatPermissionName(permission)}
+                                </Label>
+                              </div>
+                            ))}
                           </div>
                         </div>
-
-                        <div className="grid grid-cols-1 gap-2">
-                          {categoryPermissions.map((permission) => (
-                            <div key={permission} className="flex items-center space-x-2">
-                              <Checkbox
-                                id={permission}
-                                checked={formData.permissions.includes(permission)}
-                                onCheckedChange={(checked) => handlePermissionChange(permission, checked)}
-                              />
-                              <Label htmlFor={permission} className="text-sm flex-1">
-                                {permission.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                              </Label>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </TabsContent>
           </Tabs>
@@ -364,12 +349,16 @@ function RoleDetailsDialog({ role, isOpen, onClose }) {
             <Label className="text-sm font-medium text-muted-foreground">
               Permissions ({role.permissions?.length || 0})
             </Label>
-            <div className="mt-2 flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-              {role.permissions?.map((permission) => (
-                <Badge key={permission} variant="outline" className="text-xs">
-                  {permission.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                </Badge>
-              ))}
+            <div className="mt-2 flex flex-wrap gap-1 max-h-48 overflow-y-auto">
+              {role.permissions && role.permissions.length > 0 ? (
+                role.permissions.map((permission) => (
+                  <Badge key={permission} variant="outline" className="text-xs">
+                    {formatPermissionName(permission)}
+                  </Badge>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No permissions assigned</p>
+              )}
             </div>
           </div>
 

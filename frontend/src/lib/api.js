@@ -614,7 +614,7 @@ export const roles = {
    * @returns {Promise<Object>} Available permissions
    */
   async getPermissions() {
-    return GET('/api/permissions')
+    return GET('/api/roles/permissions')
   }
 }
 
@@ -731,6 +731,61 @@ export const goals = {
    */
   async freezeQuarter(freezeData) {
     return POST('/api/goals/freeze-quarter', freezeData)
+  },
+
+  /**
+   * Unfreeze all goals for a specific quarter
+   * @param {Object} unfreezeData - Unfreeze data {quarter: string, year: number, is_emergency_override?: boolean, emergency_reason?: string}
+   * @returns {Promise<Object>} Unfreeze operation result
+   */
+  async unfreezeQuarter(unfreezeData) {
+    return POST('/api/goals/unfreeze-quarter', unfreezeData)
+  },
+
+  /**
+   * Get freeze/unfreeze logs
+   * @returns {Promise<Array>} List of freeze logs
+   */
+  async getFreezeLogs() {
+    return GET('/api/goals/freeze-logs')
+  },
+
+  /**
+   * Get all goals for current user's supervisees
+   * @returns {Promise<Array>} List of supervisee goals
+   */
+  async getSuperviseeGoals() {
+    return GET('/api/goals/supervisees')
+  },
+
+  /**
+   * Create a goal for a supervisee (supervisor only)
+   * @param {Object} goalData - Goal data with supervisee_id
+   * @returns {Promise<Object>} Created goal data
+   */
+  async createForSupervisee(goalData) {
+    const { supervisee_id, ...goal } = goalData
+    return POST(`/api/goals/create-for-supervisee?supervisee_id=${supervisee_id}`, goal)
+  },
+
+  /**
+   * Respond to an assigned goal (accept or decline)
+   * @param {string} id - Goal ID
+   * @param {Object} response - Response data {accepted: boolean, response_message?: string}
+   * @returns {Promise<Object>} Updated goal data
+   */
+  async respond(id, response) {
+    return PUT(`/api/goals/${id}/respond`, response)
+  },
+
+  /**
+   * Request a change to a goal
+   * @param {string} id - Goal ID
+   * @param {string} changeRequest - Change request message
+   * @returns {Promise<Object>} Updated goal data
+   */
+  async requestChange(id, changeRequest) {
+    return PUT(`/api/goals/${id}/request-change`, { change_request: changeRequest })
   }
 }
 

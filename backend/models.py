@@ -228,10 +228,8 @@ class Goal(Base):
     title = Column(String(255), nullable=False)
     description = Column(Text)
     type = Column(Enum(GoalType), nullable=False)
-    evaluation_method = Column(String(255))
-    difficulty_level = Column(Integer)  # 1-5 scale
-    start_date = Column(Date, nullable=False)
-    end_date = Column(Date, nullable=False)
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
     progress_percentage = Column(Integer, default=0)
     status = Column(Enum(GoalStatus), default=GoalStatus.ACTIVE)
 
@@ -828,4 +826,150 @@ class PerformanceScore(Base):
     __table_args__ = (
         UniqueConstraint('user_id', 'cycle_id', name='unique_user_cycle_performance'),
         CheckConstraint("performance_band IN ('outstanding', 'exceeds_expectations', 'meets_expectations', 'below_expectations', 'needs_improvement')", name='valid_performance_band')
+    )
+
+# Notification System Models
+
+class NotificationType(str, enum.Enum):
+    """Types of notifications in the system"""
+    # Goal notifications
+    GOAL_CREATED = "goal_created"
+    GOAL_ASSIGNED = "goal_assigned"
+    GOAL_APPROVED = "goal_approved"
+    GOAL_REJECTED = "goal_rejected"
+    GOAL_ACCEPTANCE_REQUIRED = "goal_acceptance_required"
+    GOAL_ACCEPTED = "goal_accepted"
+    GOAL_DECLINED = "goal_declined"
+
+    # Initiative notifications
+    INITIATIVE_CREATED = "initiative_created"
+    INITIATIVE_ASSIGNED = "initiative_assigned"
+    INITIATIVE_APPROVED = "initiative_approved"
+    INITIATIVE_REJECTED = "initiative_rejected"
+    INITIATIVE_SUBMITTED = "initiative_submitted"
+    INITIATIVE_REVIEWED = "initiative_reviewed"
+    INITIATIVE_OVERDUE = "initiative_overdue"
+    INITIATIVE_EXTENSION_REQUESTED = "initiative_extension_requested"
+    INITIATIVE_EXTENSION_APPROVED = "initiative_extension_approved"
+    INITIATIVE_EXTENSION_DENIED = "initiative_extension_denied"
+
+    # Review notifications
+    REVIEW_ASSIGNED = "review_assigned"
+    REVIEW_DUE_SOON = "review_due_soon"
+    REVIEW_OVERDUE = "review_overdue"
+    REVIEW_SUBMITTED = "review_submitted"
+
+    # User notifications
+    USER_CREATED = "user_created"
+    USER_STATUS_CHANGED = "user_status_changed"
+    USER_ROLE_CHANGED = "user_role_changed"
+
+    # System notifications
+    SYSTEM_ANNOUNCEMENT = "system_announcement"
+
+class NotificationPriority(str, enum.Enum):
+    """Priority levels for notifications"""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    URGENT = "urgent"
+
+class Notification(Base):
+    """
+    System-wide notification management
+    Supports real-time and batched notifications for all user actions
+    """
+    __tablename__ = "notifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    type = Column(Enum(NotificationType), nullable=False)
+    priority = Column(Enum(NotificationPriority), default=NotificationPriority.MEDIUM)
+
+    # Notification content
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    action_url = Column(String(500))  # URL to navigate to when clicked
+
+    # Metadata
+    data = Column(JSON)  # Additional data (goal_id, initiative_id, etc.)
+
+    # Status
+    is_read = Column(Boolean, default=False)
+    read_at = Column(DateTime(timezone=True))
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True))  # Optional expiration for temporary notifications
+
+    # Foreign Keys
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    triggered_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # Who caused this notification
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    trigger_user = relationship("User", foreign_keys=[triggered_by])
+
+class GoalAssignment(Base):
+    """
+    Track supervisor-assigned goals to supervisees
+    Enables accept/reject workflow for assigned goals
+    """
+    __tablename__ = "goal_assignments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+
+    # Assignment status
+    status = Column(Enum(GoalStatus), default=GoalStatus.PENDING_APPROVAL)
+    response_message = Column(Text)  # Supervisee's response message
+
+    # Timestamps
+    assigned_at = Column(DateTime(timezone=True), server_default=func.now())
+    responded_at = Column(DateTime(timezone=True))
+
+    # Foreign Keys
+    goal_id = Column(UUID(as_uuid=True), ForeignKey("goals.id"), nullable=False)
+    assigned_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)  # Supervisor
+    assigned_to = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)  # Supervisee
+
+    # Relationships
+    goal = relationship("Goal", backref="assignments")
+    assigner = relationship("User", foreign_keys=[assigned_by])
+    assignee = relationship("User", foreign_keys=[assigned_to])
+
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint('goal_id', 'assigned_to', name='unique_goal_assignment'),
+    )
+
+class GoalFreezeLog(Base):
+    """
+    Audit log for goal freeze/unfreeze actions
+    Tracks who froze/unfroze goals, when, and why (especially for emergency overrides)
+    """
+    __tablename__ = "goal_freeze_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+
+    # Freeze/Unfreeze action
+    action = Column(String(20), nullable=False)  # 'freeze' or 'unfreeze'
+    quarter = Column(Enum(Quarter), nullable=False)
+    year = Column(Integer, nullable=False)
+    affected_goals_count = Column(Integer, default=0)
+
+    # Unfreeze scheduling
+    scheduled_unfreeze_date = Column(DateTime(timezone=True), nullable=True)  # When goals should auto-unfreeze
+
+    # Emergency override
+    is_emergency_override = Column(Boolean, default=False)
+    emergency_reason = Column(Text, nullable=True)  # Required for emergency unfreeze
+
+    # Audit fields
+    performed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    performed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    performer = relationship("User")
+
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("action IN ('freeze', 'unfreeze')", name='valid_freeze_action'),
     )

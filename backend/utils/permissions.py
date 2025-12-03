@@ -43,6 +43,8 @@ class SystemPermissions:
     GOAL_PROGRESS_UPDATE = "goal_progress_update"
     GOAL_STATUS_CHANGE = "goal_status_change"
     GOAL_VIEW_ALL = "goal_view_all"
+    GOAL_APPROVE = "goal_approve"
+    GOAL_FREEZE = "goal_freeze"
 
     INITIATIVE_CREATE = "initiative_create"
     INITIATIVE_ASSIGN = "initiative_assign"
@@ -119,19 +121,21 @@ class PermissionGroups:
                     SystemPermissions.GOAL_PROGRESS_UPDATE,
                     SystemPermissions.GOAL_STATUS_CHANGE,
                     SystemPermissions.GOAL_VIEW_ALL,
+                    SystemPermissions.GOAL_APPROVE,
+                    SystemPermissions.GOAL_FREEZE,
                 ]
             },
             "task_management": {
-                "name": "Task Management",
-                "description": "Create and manage tasks and assignments",
+                "name": "Initiative Management",
+                "description": "Create and manage initiatives and assignments",
                 "permissions": [
-                    SystemPermissions.TASK_CREATE,
-                    SystemPermissions.TASK_ASSIGN,
-                    SystemPermissions.TASK_EDIT,
-                    SystemPermissions.TASK_REVIEW,
-                    SystemPermissions.TASK_VIEW_ALL,
-                    SystemPermissions.TASK_EXTEND_DEADLINE,
-                    SystemPermissions.TASK_DELETE,
+                    SystemPermissions.INITIATIVE_CREATE,
+                    SystemPermissions.INITIATIVE_ASSIGN,
+                    SystemPermissions.INITIATIVE_EDIT,
+                    SystemPermissions.INITIATIVE_REVIEW,
+                    SystemPermissions.INITIATIVE_VIEW_ALL,
+                    SystemPermissions.INITIATIVE_EXTEND_DEADLINE,
+                    SystemPermissions.INITIATIVE_DELETE,
                 ]
             },
             "review_management": {

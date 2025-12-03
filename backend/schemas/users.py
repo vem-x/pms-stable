@@ -90,6 +90,7 @@ class UserWithRelations(User):
     """User with full organizational and role information"""
     organization: Optional[dict] = None
     role: Optional[dict] = None
+    supervisees: Optional[List['User']] = []  # List of users this user supervises
 
 class UserProfile(BaseModel):
     """User's self-editable profile fields"""

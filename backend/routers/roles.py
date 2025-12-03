@@ -90,6 +90,17 @@ async def create_role(
 
     return RoleSchema.from_orm(role)
 
+@router.get("/permissions")
+async def get_all_permissions(
+    current_user: UserSession = Depends(get_current_user)
+):
+    """
+    List all available permissions for role creation
+    Permission list is dynamically generated from system permissions
+    Returns permissions grouped by category
+    """
+    return PermissionGroups.get_all_groups()
+
 @router.get("/{role_id}", response_model=RoleSchema)
 async def get_role(
     role_id: uuid.UUID,
@@ -227,49 +238,6 @@ async def assign_role_to_user(
         "old_role_id": str(old_role_id) if old_role_id else None,
         "new_role_id": str(role_id)
     }
-
-@router.get("/permissions", response_model=PermissionList)
-async def get_all_permissions(
-    current_user: UserSession = Depends(get_current_user)
-):
-    """
-    List all available permissions for role creation
-    Permission list is dynamically generated from system permissions
-    """
-    permission_groups = PermissionGroups.get_all_groups()
-
-    return PermissionList(
-        organization=PermissionGroup(
-            group_name=permission_groups["organization"]["name"],
-            description=permission_groups["organization"]["description"],
-            permissions=permission_groups["organization"]["permissions"]
-        ),
-        role_management=PermissionGroup(
-            group_name=permission_groups["role_management"]["name"],
-            description=permission_groups["role_management"]["description"],
-            permissions=permission_groups["role_management"]["permissions"]
-        ),
-        user_management=PermissionGroup(
-            group_name=permission_groups["user_management"]["name"],
-            description=permission_groups["user_management"]["description"],
-            permissions=permission_groups["user_management"]["permissions"]
-        ),
-        goal_management=PermissionGroup(
-            group_name=permission_groups["goal_management"]["name"],
-            description=permission_groups["goal_management"]["description"],
-            permissions=permission_groups["goal_management"]["permissions"]
-        ),
-        task_management=PermissionGroup(
-            group_name=permission_groups["task_management"]["name"],
-            description=permission_groups["task_management"]["description"],
-            permissions=permission_groups["task_management"]["permissions"]
-        ),
-        system_administration=PermissionGroup(
-            group_name=permission_groups["system_administration"]["name"],
-            description=permission_groups["system_administration"]["description"],
-            permissions=permission_groups["system_administration"]["permissions"]
-        )
-    )
 
 @router.get("/{role_id}/users", response_model=List[dict])
 async def get_role_users(

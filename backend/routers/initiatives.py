@@ -19,7 +19,7 @@ from schemas.initiatives import (
     InitiativeCreate, InitiativeUpdate, InitiativeStatusUpdate, InitiativeSubmission, InitiativeReview,
     InitiativeExtensionRequest, InitiativeExtensionReview, Initiative as InitiativeSchema,
     InitiativeWithAssignees, InitiativeSubmissionDetail, InitiativeDocument, InitiativeExtension,
-    InitiativeList, InitiativeStats, InitiativeUrgency, InitiativeAssignee
+    InitiativeList, InitiativeStats, InitiativeUrgency, InitiativeAssignee, InitiativeApproval
 )
 from schemas.auth import UserSession
 from utils.auth import get_current_user
@@ -297,6 +297,39 @@ async def create_initiative(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.put("/{initiative_id}/approve", response_model=InitiativeSchema)
+async def approve_initiative(
+    initiative_id: uuid.UUID,
+    approval: InitiativeApproval,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    initiative_service: InitiativeWorkflowService = Depends(get_initiative_service)
+):
+    """
+    Approve or reject a pending initiative
+    Only the initiative creator's supervisor can approve
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        success = initiative_service.approve_initiative(
+            initiative_id,
+            user.id,
+            approval.approved,
+            approval.rejection_reason
+        )
+
+        if not success:
+            raise HTTPException(status_code=400, detail="Failed to approve/reject initiative")
+
+        initiative = db.query(Initiative).filter(Initiative.id == initiative_id).first()
+        return InitiativeSchema.from_orm(initiative)
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @router.get("/stats", response_model=InitiativeStats)
 async def get_initiative_stats(
     current_user: UserSession = Depends(get_current_user),
@@ -329,15 +362,16 @@ async def get_initiative_stats(
     for initiative_urgency in InitiativeUrgency:
         by_urgency[initiative_urgency.value] = sum(1 for initiative in initiatives if initiative.urgency == initiative_urgency)
 
-    # Count overdue initiatives
+    # Count overdue and pending approval initiatives
     overdue_initiatives = sum(1 for initiative in initiatives if initiative.status == InitiativeStatus.OVERDUE)
+    pending_approval = sum(1 for initiative in initiatives if initiative.status == InitiativeStatus.PENDING_APPROVAL)
 
     # Calculate average score and completion rate
     scored_initiatives = [initiative for initiative in initiatives if initiative.score is not None]
     average_score = sum(initiative.score for initiative in scored_initiatives) / len(scored_initiatives) if scored_initiatives else None
 
     completed_or_approved = sum(1 for initiative in initiatives
-                              if initiative.status in [InitiativeStatus.PENDING_REVIEW, InitiativeStatus.APPROVED])
+                              if initiative.status in [InitiativeStatus.COMPLETED, InitiativeStatus.APPROVED])
     completion_rate = (completed_or_approved / total_initiatives * 100) if total_initiatives > 0 else 0
 
     return InitiativeStats(
@@ -346,6 +380,7 @@ async def get_initiative_stats(
         by_type=by_type,
         by_urgency=by_urgency,
         overdue_initiatives=overdue_initiatives,
+        pending_approval=pending_approval,
         average_score=average_score,
         completion_rate=completion_rate
     )

@@ -10,24 +10,20 @@ import {
   Edit,
   Trash2,
   FileText,
-  Users,
   Building2,
-  ChevronRight,
-  ChevronDown,
   Clock,
   Award,
   AlertCircle,
   CheckCircle2,
-  Play,
-  Check,
-  ChevronsUpDown,
-  User,
   CheckCircle,
   XCircle,
-  TypeIcon
+  User,
+  Users,
+  Send,
+  MessageSquare
 } from "lucide-react"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -52,8 +48,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useAuth, usePermission } from "@/lib/auth-context"
 import {
   useGoals,
@@ -63,8 +57,11 @@ import {
   useUpdateGoalStatus,
   useDeleteGoal,
   useApproveGoal,
-  useFreezeGoalsQuarter,
-  useOrganizations,
+  useSuperviseeGoals,
+  useCreateGoalForSupervisee,
+  useRespondToGoal,
+  useRequestGoalChange,
+  useUsers
 } from "@/lib/react-query"
 
 const statusColors = {
@@ -73,261 +70,175 @@ const statusColors = {
   ACHIEVED: "bg-green-100 text-green-800 border-green-200",
   DISCARDED: "bg-gray-100 text-gray-800 border-gray-200",
   REJECTED: "bg-red-100 text-red-800 border-red-200",
-  // Legacy support
-  pending_approval: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  active: "bg-blue-100 text-blue-800 border-blue-200",
-  achieved: "bg-green-100 text-green-800 border-green-200",
-  discarded: "bg-gray-100 text-gray-800 border-gray-200",
-  rejected: "bg-red-100 text-red-800 border-red-200",
 }
 
 const typeColors = {
   YEARLY: "bg-purple-100 text-purple-800 border-purple-200",
   QUARTERLY: "bg-blue-100 text-blue-800 border-blue-200",
   INDIVIDUAL: "bg-green-100 text-green-800 border-green-200",
-  // Legacy support
-  yearly: "bg-purple-100 text-purple-800 border-purple-200",
-  quarterly: "bg-blue-100 text-blue-800 border-blue-200",
-  individual: "bg-green-100 text-green-800 border-green-200",
-}
-
-const statusIcons = {
-  active: Play,
-  achieved: CheckCircle2,
-  discarded: AlertCircle,
 }
 
 const typeIcons = {
-  yearly: Building2,
-  quarterly: Calendar,
-  individual: User,
   YEARLY: Building2,
   QUARTERLY: Calendar,
   INDIVIDUAL: User,
 }
 
-// Helper function to format goal type for display
-const formatGoalType = (type) => {
-  if (!type) return ''
-  return type.charAt(0).toUpperCase() + type.slice(1).toLowerCase()
-}
-
-// Helper function to format goal status for display
-const formatGoalStatus = (status) => {
+// Helper to format status for display
+const formatStatus = (status) => {
   if (!status) return ''
   return status.split('_').map(word =>
     word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
   ).join(' ')
 }
 
-function GoalCard({ goal, onEdit, onDelete, onUpdateProgress, onStatusChange, onApprove, canEdit = false, canUpdateProgress = false, canApprove = false, onCardClick }) {
-  const StatusIcon = statusIcons[goal.status?.toLowerCase()]
-  const TypeIcon = typeIcons[goal.type?.toLowerCase()
-]
-  const isActive = goal.status === "active"
-  const isPendingApproval = goal.status === "pending_approval"
+function GoalCard({ goal, onEdit, onDelete, onUpdateProgress, onStatusChange, onApprove, onRespond, onRequestChange, canEdit = false, canApprove = false, isTeamGoal = false, onViewDetails }) {
+  const TypeIcon = typeIcons[goal.type]
+  const isPendingApproval = goal.status === "PENDING_APPROVAL"
+  const isActive = goal.status === "ACTIVE"
+  const isAssignedByOther = goal.created_by !== goal.owner_id
 
   return (
-    <Card className="group hover:shadow-md transition-all duration-200 cursor-pointer" onClick={() => onCardClick?.(goal)}>
+    <Card className="group hover:shadow-md transition-all duration-200 cursor-pointer" onClick={() => onViewDetails && onViewDetails(goal)}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-lg font-semibold leading-tight">{goal.title}</CardTitle>
-            <div className="flex items-center gap-3 flex-wrap">
-              <Badge className={`${typeColors[goal.type]} flex items-center gap-1.5 px-3 py-1`}>
+          <div className="space-y-2 flex-1">
+            <CardTitle className="text-lg font-semibold">{goal.title}</CardTitle>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge className={`${typeColors[goal.type]} flex items-center gap-1.5`}>
                 <TypeIcon className="h-3.5 w-3.5" />
-                {formatGoalType(goal.type)}
+                {goal.type}
               </Badge>
-              <Badge className={`${statusColors[goal.status]} flex items-center gap-1.5 px-3 py-1`}>
-                {/* <StatusIcon className="h-3.5 w-3.5" /> */}
-                {formatGoalStatus(goal.status)}
+              <Badge className={`${statusColors[goal.status]} flex items-center gap-1.5`}>
+                {formatStatus(goal.status)}
               </Badge>
               {goal.frozen && (
-                <Badge className="bg-gray-200 text-gray-800 border-gray-300 flex items-center gap-1.5 px-3 py-1">
-                  <Target className="h-3.5 w-3.5" />
-                  Frozen
+                <Badge className="bg-gray-200 text-gray-800">Frozen</Badge>
+              )}
+              {isAssignedByOther && (
+                <Badge variant="outline" className="flex items-center gap-1">
+                  <Send className="h-3 w-3" />
+                  Assigned by Supervisor
                 </Badge>
+              )}
+              {goal.quarter && goal.year && (
+                <Badge variant="outline">{goal.quarter} {goal.year}</Badge>
               )}
             </div>
           </div>
-          {(canEdit || canUpdateProgress || canApprove) && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                {canApprove && isPendingApproval && (
-                  <>
-                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onApprove(goal); }}>
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                      Approve Goal
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                {canEdit && !goal.frozen && (
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(goal); }}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {/* Approve option for supervisors on team goals */}
+              {canApprove && isPendingApproval && isTeamGoal && (
+                <>
+                  <DropdownMenuItem onClick={() => onApprove(goal)}>
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Approve Goal
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+
+              {/* Respond option for supervisees on assigned goals */}
+              {isPendingApproval && isAssignedByOther && !isTeamGoal && (
+                <>
+                  <DropdownMenuItem onClick={() => onRespond(goal, true)}>
+                    <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
+                    Accept Goal
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onRespond(goal, false)}>
+                    <XCircle className="mr-2 h-4 w-4 text-red-600" />
+                    Decline Goal
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+
+              {/* Edit and progress options */}
+              {canEdit && !goal.frozen && (
+                <>
+                  <DropdownMenuItem onClick={() => onEdit(goal)}>
                     <Edit className="mr-2 h-4 w-4" />
                     Edit Goal
                   </DropdownMenuItem>
-                )}
-                {(canUpdateProgress || canEdit) && isActive && !goal.frozen && (
-                  <>
-                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUpdateProgress(goal); }}>
-                      <FileText className="mr-2 h-4 w-4" />
-                      Update Progress
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusChange(goal, "achieved"); }}>
-                      <CheckCircle2 className="mr-2 h-4 w-4" />
-                      Mark as Achieved
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusChange(goal, "discarded"); }}>
-                      <AlertCircle className="mr-2 h-4 w-4" />
-                      Discard Goal
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                {canEdit && (
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDelete(goal); }} className="text-red-600 focus:text-red-600">
+                  {isActive && (
+                    <>
+                      <DropdownMenuItem onClick={() => onUpdateProgress(goal)}>
+                        <FileText className="mr-2 h-4 w-4" />
+                        Update Progress
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onRequestChange(goal)}>
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        Request Change
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => onStatusChange(goal, "ACHIEVED")}>
+                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                        Mark as Achieved
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onStatusChange(goal, "DISCARDED")}>
+                        <AlertCircle className="mr-2 h-4 w-4" />
+                        Discard Goal
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </>
+              )}
+
+              {canEdit && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => onDelete(goal)} className="text-red-600">
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete Goal
                   </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </CardHeader>
-      <CardContent className="pt-0 space-y-4">
-        <p className="text-sm text-gray-600 leading-relaxed line-clamp-2">{goal.description}</p>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-gray-600 line-clamp-2">{goal.description}</p>
 
-        <div className="flex justify-center">
-          <div className="relative w-16 h-16">
-            <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
-              <path
-                className="text-gray-200"
-                stroke="currentColor"
-                strokeWidth="3"
-                fill="none"
-                d="M18 2.0845
-                   a 15.9155 15.9155 0 0 1 0 31.831
-                   a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-              <path
-                className={`${
-                  goal.status === 'achieved' ? 'text-green-500' :
-                  goal.status === 'discarded' ? 'text-gray-400' : 'text-blue-500'
-                }`}
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-                fill="none"
-                strokeDasharray={`${goal.progress_percentage || 0}, 100`}
-                d="M18 2.0845
-                   a 15.9155 15.9155 0 0 1 0 31.831
-                   a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-xs font-semibold text-gray-700">
-                {goal.progress_percentage || 0}%
-              </span>
-            </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-600">Progress</span>
+            <span className="font-semibold">{goal.progress_percentage || 0}%</span>
           </div>
+          <Progress value={goal.progress_percentage || 0} className="h-2" />
         </div>
 
-        <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t">
-          <div className="flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5" />
-            {new Date(goal.start_date).toLocaleDateString()}
+        {(goal.start_date || goal.end_date) && (
+          <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t">
+            {goal.start_date && (
+              <div className="flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" />
+                {new Date(goal.start_date).toLocaleDateString()}
+              </div>
+            )}
+            {goal.end_date && (
+              <div>Due: {new Date(goal.end_date).toLocaleDateString()}</div>
+            )}
           </div>
-          <div>Due: {new Date(goal.end_date).toLocaleDateString()}</div>
-        </div>
+        )}
+
+        {goal.owner_name && isTeamGoal && (
+          <div className="text-xs text-gray-600 pt-2 border-t">
+            Owner: <span className="font-medium">{goal.owner_name}</span>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
 }
 
-function GoalsHierarchy({ goals, onEdit, onDelete, onUpdateProgress, onStatusChange, onApprove, canEdit, canUpdateProgress, canApprove, onCardClick }) {
-  const [expandedGoals, setExpandedGoals] = useState(new Set())
-
-  const hierarchicalGoals = useMemo(() => {
-    const yearlyGoals = goals.filter((g) => g.type === "yearly")
-    const quarterlyGoals = goals.filter((g) => g.type === "quarterly")
-
-    return yearlyGoals
-      .map((yearly) => ({
-        ...yearly,
-        children: quarterlyGoals.filter((q) => q.parent_goal_id === yearly.id),
-      }))
-      .concat(
-        // Standalone quarterly goals (no parent)
-        quarterlyGoals.filter((q) => !q.parent_goal_id),
-      )
-  }, [goals])
-
-  const toggleExpanded = (goalId) => {
-    const newExpanded = new Set(expandedGoals)
-    if (newExpanded.has(goalId)) {
-      newExpanded.delete(goalId)
-    } else {
-      newExpanded.add(goalId)
-    }
-    setExpandedGoals(newExpanded)
-  }
-
-  const renderGoal = (goal, level = 0) => {
-    const hasChildren = goal.children && goal.children.length > 0
-    const isExpanded = expandedGoals.has(goal.id)
-    const paddingClass = level === 0 ? "" : level === 1 ? "ml-6" : "ml-12"
-
-    return (
-      <div key={goal.id} className={paddingClass}>
-        <div className="flex items-start gap-2 mb-3">
-          {hasChildren && (
-            <Button variant="ghost" size="sm" className="p-1 h-6 w-6 mt-1" onClick={() => toggleExpanded(goal.id)}>
-              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            </Button>
-          )}
-          <div className="flex-1">
-            <GoalCard
-              goal={goal}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              onUpdateProgress={onUpdateProgress}
-              onStatusChange={onStatusChange}
-              onApprove={onApprove}
-              canEdit={canEdit}
-              canUpdateProgress={canUpdateProgress}
-              canApprove={canApprove}
-              onCardClick={onCardClick}
-            />
-          </div>
-        </div>
-
-        {hasChildren && isExpanded && (
-          <div className="space-y-3">{goal.children.map((child) => renderGoal(child, level + 1))}</div>
-        )}
-      </div>
-    )
-  }
-
-  return <div className="space-y-4">{hierarchicalGoals.map((goal) => renderGoal(goal))}</div>
-}
-
-function GoalForm({ goal, isOpen, onClose, onSubmit, canCreateOrganizationalGoals = false }) {
-  const { user } = useAuth()
-
-  // Calculate current quarter and year for defaults
+function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSupervisee = false, supervisees = [] }) {
   const currentYear = new Date().getFullYear()
   const currentMonth = new Date().getMonth() + 1
   const currentQuarter = Math.ceil(currentMonth / 3)
@@ -335,312 +246,192 @@ function GoalForm({ goal, isOpen, onClose, onSubmit, canCreateOrganizationalGoal
   const [formData, setFormData] = useState({
     title: goal?.title || "",
     description: goal?.description || "",
-    type: goal?.type?.toUpperCase() || (canCreateOrganizationalGoals ? "QUARTERLY" : "INDIVIDUAL"),
-    evaluation_method: goal?.evaluation_method || "",
-    difficulty_level: goal?.difficulty_level || 3,
+    type: "INDIVIDUAL",
     start_date: goal?.start_date || "",
     end_date: goal?.end_date || "",
-    parent_goal_id: goal?.parent_goal_id || "",
     quarter: goal?.quarter || `Q${currentQuarter}`,
     year: goal?.year || currentYear,
+    supervisee_id: goal?.owner_id || "",
   })
 
-  const [parentGoalOpen, setParentGoalOpen] = useState(false)
+  const [createForSupervisee, setCreateForSupervisee] = useState(false)
 
   const { data: goals = [] } = useGoals()
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    onSubmit(formData)
+    onSubmit({
+      ...formData,
+      start_date: formData.start_date || null,
+      end_date: formData.end_date || null,
+      supervisee_id: createForSupervisee ? formData.supervisee_id : undefined
+    })
     onClose()
   }
 
-  const goalsArray = Array.isArray(goals) ? goals : []
-
-  // ensure comparison is uppercase
-  const potentialParents = goalsArray.filter((g) => {
-    const gType = g.type?.toUpperCase()
-    const currentType = formData.type?.toUpperCase()
-
-    if (goal && g.id === goal.id) return false
-    if (currentType === "YEARLY") return false
-    if (currentType === "QUARTERLY") return gType === "YEARLY"
-    if (currentType === "INDIVIDUAL") return gType === "YEARLY" || gType === "QUARTERLY"
-    return false
-  })
+  const potentialParents = goals.filter((g) =>
+    (g.type === "YEARLY" || g.type === "QUARTERLY") && g.status === "ACTIVE"
+  )
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle className="text-xl">{goal ? "Edit Goal" : "Create New Goal"}</DialogTitle>
+            <DialogTitle>{goal ? "Edit Goal" : "Create Individual Goal"}</DialogTitle>
             <DialogDescription>
-              {goal
-                ? "Update the goal details below."
-                : "Create a new performance goal following the hierarchical structure."}
+              Create a personal performance goal for the quarter
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-6 py-4">
+            {canCreateForSupervisee && !goal && (
+              <div className="flex items-center gap-2 p-4 bg-blue-50 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="createForSupervisee"
+                  checked={createForSupervisee}
+                  onChange={(e) => setCreateForSupervisee(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <Label htmlFor="createForSupervisee" className="cursor-pointer">
+                  Create this goal for a team member
+                </Label>
+              </div>
+            )}
+
+            {createForSupervisee && (
+              <div className="grid gap-2">
+                <Label htmlFor="supervisee">Select Team Member *</Label>
+                <Select
+                  value={formData.supervisee_id}
+                  onValueChange={(value) => setFormData({ ...formData, supervisee_id: value })}
+                  required={createForSupervisee}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select team member" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {supervisees.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name} - {s.job_title || 'No title'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="grid gap-2">
-              <Label htmlFor="title" className="text-sm font-medium">
-                Goal Title
-              </Label>
+              <Label htmlFor="title">Goal Title *</Label>
               <Input
                 id="title"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                placeholder="Enter a clear, concise goal title"
+                placeholder="Enter goal title"
                 required
-                className="text-base"
               />
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="description" className="text-sm font-medium">
-                Description
-              </Label>
+              <Label htmlFor="description">Description</Label>
               <Textarea
                 id="description"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Provide a detailed description of what this goal aims to achieve"
+                placeholder="Describe what you want to achieve"
                 rows={4}
-                className="text-base resize-none"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="type" className="text-sm font-medium">
-                  Goal Type
-                </Label>
+                <Label htmlFor="quarter">Quarter *</Label>
                 <Select
-                  value={formData.type}
-                  onValueChange={(value) => setFormData({ ...formData, type: value.toUpperCase(), parent_goal_id: "" })}
-                  disabled={!!goal}
+                  value={formData.quarter}
+                  onValueChange={(value) => setFormData({ ...formData, quarter: value })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select goal type" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {canCreateOrganizationalGoals && (
-                      <>
-                        <SelectItem value="YEARLY">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-4 w-4" />
-                            Yearly Goal
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="QUARTERLY">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4" />
-                            Quarterly Goal
-                          </div>
-                        </SelectItem>
-                      </>
-                    )}
-                    <SelectItem value="INDIVIDUAL">
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4" />
-                        Individual Goal
-                      </div>
-                    </SelectItem>
+                    <SelectItem value="Q1">Q1 (Jan-Mar)</SelectItem>
+                    <SelectItem value="Q2">Q2 (Apr-Jun)</SelectItem>
+                    <SelectItem value="Q3">Q3 (Jul-Sep)</SelectItem>
+                    <SelectItem value="Q4">Q4 (Oct-Dec)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="grid gap-2">
-                <Label htmlFor="difficulty" className="text-sm font-medium">
-                  Difficulty Level
-                </Label>
-                <Select
-                  value={formData.difficulty_level.toString()}
-                  onValueChange={(value) => setFormData({ ...formData, difficulty_level: Number.parseInt(value) })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select difficulty" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1 - Very Easy</SelectItem>
-                    <SelectItem value="2">2 - Easy</SelectItem>
-                    <SelectItem value="3">3 - Medium</SelectItem>
-                    <SelectItem value="4">4 - Hard</SelectItem>
-                    <SelectItem value="5">5 - Very Hard</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="year">Year *</Label>
+                <Input
+                  id="year"
+                  type="number"
+                  min={currentYear - 1}
+                  max={currentYear + 5}
+                  value={formData.year}
+                  onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
+                  required
+                />
               </div>
             </div>
 
-            {formData.type === "INDIVIDUAL" && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="quarter" className="text-sm font-medium">
-                    Quarter <span className="text-red-500">*</span>
-                  </Label>
-                  <Select
-                    value={formData.quarter}
-                    onValueChange={(value) => setFormData({ ...formData, quarter: value })}
-                    required={formData.type === "INDIVIDUAL"}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select quarter" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Q1">Q1 (Jan - Mar)</SelectItem>
-                      <SelectItem value="Q2">Q2 (Apr - Jun)</SelectItem>
-                      <SelectItem value="Q3">Q3 (Jul - Sep)</SelectItem>
-                      <SelectItem value="Q4">Q4 (Oct - Dec)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="year" className="text-sm font-medium">
-                    Year <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="year"
-                    type="number"
-                    min={currentYear - 1}
-                    max={currentYear + 5}
-                    value={formData.year}
-                    onChange={(e) => setFormData({ ...formData, year: Number.parseInt(e.target.value) })}
-                    required={formData.type === "INDIVIDUAL"}
-                  />
-                </div>
-              </div>
-            )}
-
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="start_date" className="text-sm font-medium">
-                  Start Date
-                </Label>
+                <Label htmlFor="start_date">Start Date (Optional)</Label>
                 <Input
                   id="start_date"
                   type="date"
                   value={formData.start_date}
                   onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                  required
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="end_date" className="text-sm font-medium">
-                  End Date
-                </Label>
+                <Label htmlFor="end_date">End Date (Optional)</Label>
                 <Input
                   id="end_date"
                   type="date"
                   value={formData.end_date}
                   onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                  required
                 />
               </div>
             </div>
 
             {potentialParents.length > 0 && (
               <div className="grid gap-2">
-                <Label htmlFor="parent" className="text-sm font-medium">
-                  {formData.type === "INDIVIDUAL" ? "Link to Organizational Goal (Optional)" : "Parent Goal (Optional)"}
-                </Label>
-                <Popover open={parentGoalOpen} onOpenChange={setParentGoalOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={parentGoalOpen}
-                      className="w-full justify-between"
-                    >
-                      {formData.parent_goal_id && formData.parent_goal_id !== "none"
-                        ? (() => {
-                            const selectedGoal = potentialParents.find(g => g.id === formData.parent_goal_id)
-                            return selectedGoal ? (
-                              <div className="flex items-center gap-2">
-                                {React.createElement(typeIcons[selectedGoal.type], { className: "h-4 w-4" })}
-                                {selectedGoal.title} ({selectedGoal.type})
-                              </div>
-                            ) : "Select parent goal..."
-                          })()
-                        : "Select parent goal..."}
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-full p-0">
-                    <Command>
-                      <CommandInput placeholder="Search parent goals..." />
-                      <CommandList>
-                        <CommandEmpty>No goals found.</CommandEmpty>
-                        <CommandGroup>
-                          <CommandItem
-                            value="none"
-                            onSelect={() => {
-                              setFormData({ ...formData, parent_goal_id: "none" })
-                              setParentGoalOpen(false)
-                            }}
-                          >
-                            <Check
-                              className={`mr-2 h-4 w-4 ${
-                                formData.parent_goal_id === "none" || !formData.parent_goal_id ? "opacity-100" : "opacity-0"
-                              }`}
-                            />
-                            No parent goal
-                          </CommandItem>
-                          {potentialParents.map((g) => (
-                            <CommandItem
-                              key={g.id}
-                              value={`${g.title} ${g.type}`}
-                              onSelect={() => {
-                                setFormData({ ...formData, parent_goal_id: g.id })
-                                setParentGoalOpen(false)
-                              }}
-                            >
-                              <Check
-                                className={`mr-2 h-4 w-4 ${
-                                  formData.parent_goal_id === g.id ? "opacity-100" : "opacity-0"
-                                }`}
-                              />
-                              <div className="flex items-center gap-2">
-                                {React.createElement(typeIcons[g.type], { className: "h-4 w-4" })}
-                                {g.title} ({g.type})
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                <Label htmlFor="parent">Link to Organizational Goal (Optional)</Label>
+                <Select
+                  value={formData.parent_goal_id || "none"}
+                  onValueChange={(value) => setFormData({ ...formData, parent_goal_id: value === "none" ? "" : value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select parent goal" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No parent goal</SelectItem>
+                    {potentialParents.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.title} ({g.type})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
-
-            <div className="grid gap-2">
-              <Label htmlFor="evaluation_method" className="text-sm font-medium">
-                Evaluation Method
-              </Label>
-              <Input
-                id="evaluation_method"
-                value={formData.evaluation_method}
-                onChange={(e) => setFormData({ ...formData, evaluation_method: e.target.value })}
-                placeholder="How will success be measured for this goal?"
-                className="text-base"
-              />
-            </div>
           </div>
 
-          <DialogFooter className="gap-3">
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-              {goal ? "Update Goal" : "Create Goal"}
-            </Button>
+            <Button type="submit">{goal ? "Update Goal" : "Create Goal"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
   )
 }
-
 
 function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit }) {
   const [formData, setFormData] = useState({
@@ -661,15 +452,13 @@ function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit }) {
           <DialogHeader>
             <DialogTitle>Update Goal Progress</DialogTitle>
             <DialogDescription>
-              Update the progress for &quot;<strong>{goal?.title}</strong>&quot;
+              Update progress for &quot;{goal?.title}&quot;
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-6 py-4">
             <div className="grid gap-3">
-              <Label htmlFor="percentage" className="text-sm font-medium">
-                Progress Percentage
-              </Label>
+              <Label htmlFor="percentage">Progress Percentage</Label>
               <div className="space-y-2">
                 <Input
                   id="percentage"
@@ -677,177 +466,33 @@ function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit }) {
                   min="0"
                   max="100"
                   value={formData.new_percentage}
-                  onChange={(e) => setFormData({ ...formData, new_percentage: Number.parseInt(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, new_percentage: parseInt(e.target.value) || 0 })}
                   required
-                  className="text-base"
                 />
                 <Progress value={formData.new_percentage} className="h-2" />
               </div>
             </div>
 
             <div className="grid gap-3">
-              <Label htmlFor="report" className="text-sm font-medium">
-                Progress Report *
-              </Label>
+              <Label htmlFor="report">Progress Report *</Label>
               <Textarea
                 id="report"
                 value={formData.report}
                 onChange={(e) => setFormData({ ...formData, report: e.target.value })}
-                placeholder="Explain the progress made, key achievements, and reasons for this update..."
+                placeholder="Explain the progress made..."
                 rows={5}
                 required
-                className="text-base resize-none"
               />
-              <p className="text-xs text-gray-500">
-                This report will be logged for audit purposes and progress tracking.
-              </p>
             </div>
           </div>
 
-          <DialogFooter className="gap-3">
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-              Update Progress
-            </Button>
+            <Button type="submit">Update Progress</Button>
           </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function GoalDetailDialog({ goal, isOpen, onClose, allGoals }) {
-  if (!goal) return null
-
-  const childGoals = allGoals.filter(g => g.parent_goal_id === goal.id)
-  const parentGoal = goal.parent_goal_id ? allGoals.find(g => g.id === goal.parent_goal_id) : null
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-start justify-between">
-            <div className="space-y-2">
-              <DialogTitle className="text-2xl pr-8">{goal.title}</DialogTitle>
-              <div className="flex items-center gap-3">
-                <Badge className={`${typeColors[goal.type]} flex items-center gap-1.5 px-3 py-1`}>
-                  {React.createElement(typeIcons[goal.type], { className: "h-3.5 w-3.5" })}
-                  {goal.type}
-                </Badge>
-                <Badge className={`${statusColors[goal.status]} flex items-center gap-1.5 px-3 py-1`}>
-                  {React.createElement(statusIcons[goal.status], { className: "h-3.5 w-3.5" })}
-                  {goal.status}
-                </Badge>
-              </div>
-            </div>
-            <div className="flex justify-center">
-              <div className="relative w-20 h-20">
-                <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 36 36">
-                  <path
-                    className="text-gray-200"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    fill="none"
-                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                  />
-                  <path
-                    className={`${
-                      goal.status === 'achieved' ? 'text-green-500' :
-                      goal.status === 'discarded' ? 'text-gray-400' : 'text-blue-500'
-                    }`}
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    fill="none"
-                    strokeDasharray={`${goal.progress_percentage || 0}, 100`}
-                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-sm font-semibold text-gray-700">
-                    {goal.progress_percentage || 0}%
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </DialogHeader>
-
-        <div className="grid gap-6 py-4">
-          <div>
-            <h4 className="font-medium text-gray-900 mb-2">Description</h4>
-            <p className="text-gray-600 leading-relaxed">{goal.description || 'No description provided'}</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">Timeline</h4>
-              <div className="space-y-1 text-sm text-gray-600">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4" />
-                  <span>Start: {new Date(goal.start_date).toLocaleDateString()}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4" />
-                  <span>End: {new Date(goal.end_date).toLocaleDateString()}</span>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">Details</h4>
-              <div className="space-y-1 text-sm text-gray-600">
-                <div>Difficulty: {goal.difficulty_level}/5</div>
-                {goal.evaluation_method && (
-                  <div>Evaluation: {goal.evaluation_method}</div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {parentGoal && (
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">Parent Goal</h4>
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  {React.createElement(typeIcons[parentGoal.type], { className: "h-4 w-4 text-gray-500" })}
-                  <span className="font-medium text-gray-900">{parentGoal.title}</span>
-                  <Badge className={`${typeColors[parentGoal.type]} text-xs`}>
-                    {parentGoal.type}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {childGoals.length > 0 && (
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">Child Goals ({childGoals.length})</h4>
-              <div className="space-y-2">
-                {childGoals.map((child) => (
-                  <div key={child.id} className="p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {React.createElement(typeIcons[child.type], { className: "h-4 w-4 text-gray-500" })}
-                        <span className="font-medium text-gray-900">{child.title}</span>
-                        <Badge className={`${typeColors[child.type]} text-xs`}>
-                          {child.type}
-                        </Badge>
-                        <Badge className={`${statusColors[child.status]} text-xs`}>
-                          {child.status}
-                        </Badge>
-                      </div>
-                      <span className="text-sm text-gray-600">{child.progress_percentage || 0}%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-        </div>
       </DialogContent>
     </Dialog>
   )
@@ -869,33 +514,24 @@ function GoalApprovalDialog({ goal, isOpen, onClose, onSubmit }) {
       <DialogContent className="sm:max-w-[500px]">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle className="text-xl">Approve Goal</DialogTitle>
+            <DialogTitle>Approve Goal</DialogTitle>
             <DialogDescription>
-              Review and approve or reject this individual goal.
+              Review and approve or reject this goal
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="p-4 bg-gray-50 rounded-lg space-y-2">
-              <h3 className="font-semibold text-gray-900">{goal?.title}</h3>
+              <h3 className="font-semibold">{goal?.title}</h3>
               {goal?.description && (
                 <p className="text-sm text-gray-600">{goal.description}</p>
               )}
               <div className="flex items-center gap-2 text-sm">
-                <Badge className={typeColors[goal?.type] || typeColors.individual}>
-                  {goal?.type?.toUpperCase()}
-                </Badge>
-                {goal?.quarter && (
-                  <Badge variant="outline">
-                    {goal.quarter} {goal.year}
-                  </Badge>
+                <Badge>{goal?.quarter} {goal?.year}</Badge>
+                {goal?.owner_name && (
+                  <span className="text-gray-600">Owner: {goal.owner_name}</span>
                 )}
               </div>
-              {goal?.owner_name && (
-                <p className="text-sm text-gray-600">
-                  <span className="font-medium">Owner:</span> {goal.owner_name}
-                </p>
-              )}
             </div>
 
             <div className="flex gap-2">
@@ -921,17 +557,16 @@ function GoalApprovalDialog({ goal, isOpen, onClose, onSubmit }) {
 
             {!formData.approved && (
               <div className="grid gap-2">
-                <Label htmlFor="rejection_reason" className="text-sm font-medium">
+                <Label htmlFor="rejection_reason">
                   Rejection Reason <span className="text-red-500">*</span>
                 </Label>
                 <Textarea
                   id="rejection_reason"
                   value={formData.rejection_reason}
                   onChange={(e) => setFormData({ ...formData, rejection_reason: e.target.value })}
-                  placeholder="Provide a reason for rejecting this goal..."
+                  placeholder="Explain why this goal is being rejected..."
                   rows={4}
                   required={!formData.approved}
-                  className="resize-none"
                 />
               </div>
             )}
@@ -951,66 +586,385 @@ function GoalApprovalDialog({ goal, isOpen, onClose, onSubmit }) {
   )
 }
 
+function ChangeRequestDialog({ goal, isOpen, onClose, onSubmit }) {
+  const [changeRequest, setChangeRequest] = useState("")
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    onSubmit(changeRequest)
+    onClose()
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[500px]">
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Request Goal Change</DialogTitle>
+            <DialogDescription>
+              Request modifications to &quot;{goal?.title}&quot;
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="change_request">
+                What changes do you need? <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="change_request"
+                value={changeRequest}
+                onChange={(e) => setChangeRequest(e.target.value)}
+                placeholder="Describe the changes you need to this goal..."
+                rows={5}
+                required
+              />
+              <p className="text-xs text-gray-500">
+                Your supervisor will review this request and may approve changes to your goal
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit">Submit Request</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RespondToGoalDialog({ goal, isOpen, onClose, onSubmit }) {
+  const [formData, setFormData] = useState({
+    accepted: true,
+    response_message: ""
+  })
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    onSubmit(formData.accepted, formData.response_message)
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[500px]">
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Respond to Assigned Goal</DialogTitle>
+            <DialogDescription>
+              Your supervisor assigned you this goal
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="p-4 bg-gray-50 rounded-lg space-y-2">
+              <h3 className="font-semibold">{goal?.title}</h3>
+              {goal?.description && (
+                <p className="text-sm text-gray-600">{goal.description}</p>
+              )}
+              <div className="flex items-center gap-2 text-sm">
+                <Badge>{goal?.quarter} {goal?.year}</Badge>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={formData.accepted ? "default" : "outline"}
+                className="flex-1"
+                onClick={() => setFormData({ accepted: true, response_message: "" })}
+              >
+                <CheckCircle className="h-4 w-4 mr-2" />
+                Accept
+              </Button>
+              <Button
+                type="button"
+                variant={!formData.accepted ? "destructive" : "outline"}
+                className="flex-1"
+                onClick={() => setFormData({ ...formData, accepted: false })}
+              >
+                <XCircle className="h-4 w-4 mr-2" />
+                Decline
+              </Button>
+            </div>
+
+            {!formData.accepted && (
+              <div className="grid gap-2">
+                <Label htmlFor="response_message">
+                  Reason for declining <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="response_message"
+                  value={formData.response_message}
+                  onChange={(e) => setFormData({ ...formData, response_message: e.target.value })}
+                  placeholder="Explain why you're declining this goal..."
+                  rows={4}
+                  required={!formData.accepted}
+                />
+              </div>
+            )}
+
+            {formData.accepted && (
+              <div className="grid gap-2">
+                <Label htmlFor="response_message">Message (Optional)</Label>
+                <Textarea
+                  id="response_message"
+                  value={formData.response_message}
+                  onChange={(e) => setFormData({ ...formData, response_message: e.target.value })}
+                  placeholder="Add any comments..."
+                  rows={3}
+                />
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" variant={formData.accepted ? "default" : "destructive"}>
+              {formData.accepted ? "Accept Goal" : "Decline Goal"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function GoalDetailDialog({ goal, isOpen, onClose, parentGoal, supervisor }) {
+  if (!goal) return null
+
+  const TypeIcon = typeIcons[goal.type]
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <div className="flex items-start justify-between">
+            <div className="space-y-2 flex-1">
+              <DialogTitle className="text-xl">{goal.title}</DialogTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge className={`${typeColors[goal.type]} flex items-center gap-1.5`}>
+                  <TypeIcon className="h-3.5 w-3.5" />
+                  {goal.type}
+                </Badge>
+                <Badge className={statusColors[goal.status]}>
+                  {formatStatus(goal.status)}
+                </Badge>
+                {goal.quarter && goal.year && (
+                  <Badge variant="outline">{goal.quarter} {goal.year}</Badge>
+                )}
+                {goal.frozen && (
+                  <Badge className="bg-gray-200 text-gray-800">Frozen</Badge>
+                )}
+              </div>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <div className="space-y-6 py-4">
+          {/* Description */}
+          {goal.description && (
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm text-gray-700">Description</h3>
+              <p className="text-sm text-gray-600 whitespace-pre-wrap">{goal.description}</p>
+            </div>
+          )}
+
+          {/* Progress */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-sm text-gray-700">Progress</h3>
+              <span className="text-sm font-semibold">{goal.progress_percentage || 0}%</span>
+            </div>
+            <Progress value={goal.progress_percentage || 0} className="h-2" />
+          </div>
+
+          {/* Dates */}
+          {(goal.start_date || goal.end_date) && (
+            <div className="grid grid-cols-2 gap-4">
+              {goal.start_date && (
+                <div className="space-y-1">
+                  <h3 className="font-semibold text-sm text-gray-700">Start Date</h3>
+                  <p className="text-sm text-gray-600">
+                    {new Date(goal.start_date).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </p>
+                </div>
+              )}
+              {goal.end_date && (
+                <div className="space-y-1">
+                  <h3 className="font-semibold text-sm text-gray-700">End Date</h3>
+                  <p className="text-sm text-gray-600">
+                    {new Date(goal.end_date).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Parent Goal */}
+          {parentGoal && (
+            <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <h3 className="font-semibold text-sm text-blue-900">Linked to Organizational Goal</h3>
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-blue-800">{parentGoal.title}</p>
+                <div className="flex items-center gap-2">
+                  <Badge className={typeColors[parentGoal.type]}>
+                    {parentGoal.type}
+                  </Badge>
+                  <Badge className={statusColors[parentGoal.status]}>
+                    {formatStatus(parentGoal.status)}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Supervisor Info */}
+          {supervisor && (
+            <div className="space-y-2 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <h3 className="font-semibold text-sm text-gray-700">Reporting Supervisor</h3>
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
+                  <User className="h-5 w-5 text-gray-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{supervisor.name}</p>
+                  <p className="text-xs text-gray-600">{supervisor.job_title || 'Supervisor'}</p>
+                  {supervisor.email && (
+                    <p className="text-xs text-gray-500">{supervisor.email}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Rejection Reason */}
+          {goal.status === 'REJECTED' && goal.rejection_reason && (
+            <div className="space-y-2 p-4 bg-red-50 rounded-lg border border-red-200">
+              <h3 className="font-semibold text-sm text-red-900">Rejection Reason</h3>
+              <p className="text-sm text-red-800">{goal.rejection_reason}</p>
+            </div>
+          )}
+
+          {/* Achievement Date */}
+          {goal.status === 'ACHIEVED' && goal.achieved_at && (
+            <div className="space-y-1">
+              <h3 className="font-semibold text-sm text-gray-700">Achieved On</h3>
+              <p className="text-sm text-gray-600">
+                {new Date(goal.achieved_at).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                })}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function GoalsPage() {
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [isProgressOpen, setIsProgressOpen] = useState(false)
-  const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [isApprovalOpen, setIsApprovalOpen] = useState(false)
+  const [isChangeRequestOpen, setIsChangeRequestOpen] = useState(false)
+  const [isRespondOpen, setIsRespondOpen] = useState(false)
+  const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState(null)
   const [updatingGoal, setUpdatingGoal] = useState(null)
-  const [selectedGoal, setSelectedGoal] = useState(null)
   const [approvingGoal, setApprovingGoal] = useState(null)
-  const [goalViewType, setGoalViewType] = useState("organizational") // "my" or "organizational"
-  const [filterType, setFilterType] = useState("all")
-  const [filterStatus, setFilterStatus] = useState("all")
-  const [viewMode, setViewMode] = useState("list") // hierarchy or list
+  const [changingGoal, setChangingGoal] = useState(null)
+  const [respondingGoal, setRespondingGoal] = useState(null)
+  const [detailGoal, setDetailGoal] = useState(null)
+  const [activeTab, setActiveTab] = useState("organizational")
 
   const { user } = useAuth()
-
-  const canViewAllGoals = usePermission("goal_view_all")
   const canEditGoals = usePermission("goal_edit")
   const canUpdateProgress = usePermission("goal_progress_update")
   const canApproveGoals = usePermission("goal_approve")
-  const canCreateYearly = usePermission("goal_create_yearly")
-  const canCreateQuarterly = usePermission("goal_create_quarterly")
-  const canCreateDepartmental = usePermission("goal_create_departmental")
-  const canCreateOrganizationalGoals = canCreateYearly || canCreateQuarterly || canCreateDepartmental
-
-  // Everyone can access goals page - permissions checked for specific actions
 
   const { data: goals = [], isLoading } = useGoals()
-   
-  console.log(goals)
+  const { data: superviseeGoals = [] } = useSuperviseeGoals()
+  const { data: users = [] } = useUsers()
+
   const createMutation = useCreateGoal()
+  const createForSuperviseeMutation = useCreateGoalForSupervisee()
   const updateMutation = useUpdateGoal()
   const updateProgressMutation = useUpdateGoalProgress()
   const updateStatusMutation = useUpdateGoalStatus()
   const deleteMutation = useDeleteGoal()
   const approvalMutation = useApproveGoal()
+  const respondMutation = useRespondToGoal()
+  const requestChangeMutation = useRequestGoalChange()
 
+  // Get supervisees for supervisor view
+  const supervisees = useMemo(() => {
+    return users.filter(u => u.supervisor_id === user?.user_id)
+  }, [users, user])
+
+  const isSupervisor = supervisees.length > 0
+
+  // Filter goals by type
+  const organizationalGoals = useMemo(() =>
+    goals.filter(g => g.type === "YEARLY" || g.type === "QUARTERLY"),
+    [goals]
+  )
+
+  const myIndividualGoals = useMemo(() =>
+    goals.filter(g => g.type === "INDIVIDUAL" && g.owner_id === user?.user_id),
+    [goals, user]
+  )
+
+  // Handlers
   const handleCreate = (data) => {
-    const processedData = {
-      ...data,
-      type: data.type,
-      parent_goal_id: data.parent_goal_id === "none" || data.parent_goal_id === "" ? null : data.parent_goal_id,
-      difficulty_level: parseInt(data.difficulty_level, 10),
+    if (data.supervisee_id) {
+      // Create goal for supervisee using the special endpoint
+      createForSuperviseeMutation.mutate({
+        ...data,
+        parent_goal_id: data.parent_goal_id === "" ? null : data.parent_goal_id,
+      }, {
+        onSuccess: () => {
+          setIsFormOpen(false)
+          setEditingGoal(null)
+        }
+      })
+    } else {
+      createMutation.mutate({
+        ...data,
+        parent_goal_id: data.parent_goal_id === "" ? null : data.parent_goal_id,
+      }, {
+        onSuccess: () => {
+          setIsFormOpen(false)
+          setEditingGoal(null)
+        }
+      })
     }
-
-    console.log('Creating goal with data:', processedData)
-    createMutation.mutate(processedData)
   }
 
   const handleUpdate = (data) => {
     if (editingGoal) {
-      const processedData = {
-        ...data,
-        type: data.type?.toLowerCase(), // Convert to lowercase for backend enum
-        parent_goal_id: data.parent_goal_id === "none" || data.parent_goal_id === "" ? null : data.parent_goal_id,
-        difficulty_level: parseInt(data.difficulty_level, 10),
-      }
-
-      console.log('Updating goal with data:', processedData)
-      updateMutation.mutate({ id: editingGoal.id, ...processedData })
+      updateMutation.mutate({ id: editingGoal.id, ...data })
     }
   }
 
@@ -1018,10 +972,49 @@ export default function GoalsPage() {
     if (updatingGoal) {
       updateProgressMutation.mutate({ id: updatingGoal.id, ...data }, {
         onSuccess: () => {
-          // Auto-achieve goal if progress reaches 100%
           if (data.new_percentage === 100) {
-            updateStatusMutation.mutate({ id: updatingGoal.id, status: 'achieved' })
+            updateStatusMutation.mutate({ id: updatingGoal.id, status: 'ACHIEVED' })
           }
+        }
+      })
+    }
+  }
+
+  const handleApprove = (data) => {
+    if (approvingGoal) {
+      approvalMutation.mutate({ id: approvingGoal.id, ...data }, {
+        onSuccess: () => {
+          setIsApprovalOpen(false)
+          setApprovingGoal(null)
+        }
+      })
+    }
+  }
+
+  const handleRequestChange = (changeRequest) => {
+    if (changingGoal) {
+      requestChangeMutation.mutate({
+        id: changingGoal.id,
+        changeRequest
+      }, {
+        onSuccess: () => {
+          setIsChangeRequestOpen(false)
+          setChangingGoal(null)
+        }
+      })
+    }
+  }
+
+  const handleRespond = (accepted, message) => {
+    if (respondingGoal) {
+      respondMutation.mutate({
+        id: respondingGoal.id,
+        accepted,
+        response_message: message
+      }, {
+        onSuccess: () => {
+          setIsRespondOpen(false)
+          setRespondingGoal(null)
         }
       })
     }
@@ -1037,261 +1030,142 @@ export default function GoalsPage() {
     setIsProgressOpen(true)
   }
 
-  const handleStatusChange = (goal, status) => {
-    updateStatusMutation.mutate({ id: goal.id, status })
-  }
-
-  const handleDelete = (goal) => {
-    if (confirm(`Are you sure you want to delete "${goal.title}"? This action cannot be undone.`)) {
-      deleteMutation.mutate(goal.id)
-    }
-  }
-
   const handleApprovalDialog = (goal) => {
     setApprovingGoal(goal)
     setIsApprovalOpen(true)
   }
 
-  const handleApprove = (data) => {
-    if (approvingGoal) {
-      approvalMutation.mutate({ id: approvingGoal.id, ...data }, {
-        onSuccess: () => {
-          setIsApprovalOpen(false)
-          setApprovingGoal(null)
-        }
-      })
+  const handleChangeRequestDialog = (goal) => {
+    setChangingGoal(goal)
+    setIsChangeRequestOpen(true)
+  }
+
+  const handleRespondDialog = (goal, accepted) => {
+    setRespondingGoal({ ...goal, initialAccepted: accepted })
+    setIsRespondOpen(true)
+  }
+
+  const handleStatusChange = (goal, status) => {
+    updateStatusMutation.mutate({ id: goal.id, status })
+  }
+
+  const handleDelete = (goal) => {
+    if (confirm(`Delete "${goal.title}"?`)) {
+      deleteMutation.mutate(goal.id)
     }
   }
 
-  const handleCloseForm = () => {
-    setIsFormOpen(false)
-    setEditingGoal(null)
-  }
-
-  const handleCloseApproval = () => {
-    setIsApprovalOpen(false)
-    setApprovingGoal(null)
-  }
-
-  const handleCloseProgress = () => {
-    setIsProgressOpen(false)
-    setUpdatingGoal(null)
-  }
-
-  const handleCardClick = (goal) => {
-    setSelectedGoal(goal)
+  const handleViewDetails = (goal) => {
+    setDetailGoal(goal)
     setIsDetailOpen(true)
   }
 
-  const handleCloseDetail = () => {
-    setIsDetailOpen(false)
-    setSelectedGoal(null)
-  }
+  // Get parent goal and supervisor for detail view
+  const parentGoalForDetail = detailGoal?.parent_goal_id
+    ? goals.find(g => g.id === detailGoal.parent_goal_id)
+    : null
 
-  const goalsArray = Array.isArray(goals) ? goals : []
-  const filteredGoals = goalsArray.filter((goal) => {
-    console.log(goalViewType)
-    console.log(user)
-     
-    if (goalViewType === "my") {
-
-      if (goal.type !== "INDIVIDUAL" || goal.owner_id !== user?.user_id) {
-        return false
-      }
-    } else {
-      if (goal.type !== "YEARLY" && goal.type !== "QUARTERLY") {
-        return false
-      }
-    }
-
-    const matchesType = filterType === "all" || goal.type === filterType
-    const matchesStatus = filterStatus === "all" || goal.status === filterStatus
-    return matchesType && matchesStatus
-  })
-
-  // Everyone can create goals - at minimum individual goals
-  const canCreateAnyGoal = true
+  const supervisorForDetail = detailGoal?.owner_id && detailGoal.owner_id !== user?.user_id
+    ? users.find(u => u.id === detailGoal.owner_id)?.supervisor
+    : user?.supervisor_id
+      ? users.find(u => u.id === user.supervisor_id)
+      : null
 
   return (
     <div className="space-y-8">
-      {/* Header Section */}
+      {/* Header */}
       <div className="border-b border-gray-200 pb-6">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <h1 className="text-3xl font-bold text-gray-900">Goals Management</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Goals</h1>
             <p className="text-base text-gray-600">
-              Create, manage, and track performance goals across the entire organization
+              Track organizational goals and manage your personal performance goals
             </p>
           </div>
-          {canCreateAnyGoal && (
-            <Button onClick={() => setIsFormOpen(true)} className=" px-6">
-              <Plus className="mr-2 h-4 w-4" />
-              Create Goal
-            </Button>
-          )}
         </div>
       </div>
 
-      {/* Goal View Tabs */}
-      <Tabs value={goalViewType} onValueChange={setGoalViewType} className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+      {/* Main Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full max-w-2xl grid-cols-3">
           <TabsTrigger value="organizational" className="flex items-center gap-2">
             <Building2 className="h-4 w-4" />
-            Organizational Goals
+            Organizational
           </TabsTrigger>
           <TabsTrigger value="my" className="flex items-center gap-2">
-            <User className="h-4 w-4" />
+            <Target className="h-4 w-4" />
             My Goals
           </TabsTrigger>
+          {isSupervisor && (
+            <TabsTrigger value="team" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Team Goals
+            </TabsTrigger>
+          )}
         </TabsList>
-      </Tabs>
 
-      {/* Statistics Dashboard */}
-      <div className="grid gap-6 md:grid-cols-4">
-        <Card className="">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-700">Active Goals</CardTitle>
-            <div className="h-8 w-8 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Target className="h-4 w-4 text-blue-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">
-              {filteredGoals.filter((g) => g.status === "active").length}
-            </div>
-            <p className="text-xs text-gray-500 mt-1">Across all levels</p>
-          </CardContent>
-        </Card>
-
-        <Card className=" ">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-700">Achieved Goals</CardTitle>
-            <div className="h-8 w-8 bg-green-100 rounded-lg flex items-center justify-center">
-              <Award className="h-4 w-4 text-green-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">
-              {filteredGoals.filter((g) => g.status === "achieved").length}
-            </div>
-            <p className="text-xs text-gray-500 mt-1">Organization-wide</p>
-          </CardContent>
-        </Card>
-
-        <Card className="">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-700">Average Progress</CardTitle>
-            <div className="h-8 w-8 bg-orange-100 rounded-lg flex items-center justify-center">
-              <TrendingUp className="h-4 w-4 text-orange-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">
-              {filteredGoals.length > 0
-                ? Math.round(
-                    filteredGoals
-                      .filter((g) => g.status === "active")
-                      .reduce((sum, g) => sum + (g.progress_percentage || 0), 0) /
-                      Math.max(filteredGoals.filter((g) => g.status === "active").length, 1),
-                  )
-                : 0}
-              %
-            </div>
-            <p className="text-xs text-gray-500 mt-1">All active goals</p>
-          </CardContent>
-        </Card>
-
-        <Card className="">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-700">Total Goals</CardTitle>
-            <div className="h-8 w-8 bg-purple-100 rounded-lg flex items-center justify-center">
-              <Building2 className="h-4 w-4 text-purple-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{filteredGoals.length}</div>
-            <p className="text-xs text-gray-500 mt-1">Under management</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters and View Controls */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex gap-4">
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Filter by type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="yearly">Yearly Goals</SelectItem>
-                  <SelectItem value="quarterly">Quarterly Goals</SelectItem>
-                  <SelectItem value="individual">Individual Goals</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="pending_approval">Pending Approval</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="achieved">Achieved</SelectItem>
-                  <SelectItem value="discarded">Discarded</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Tabs value={viewMode} onValueChange={setViewMode}>
-              <TabsList>
-                <TabsTrigger value="hierarchy">Hierarchy View</TabsTrigger>
-                <TabsTrigger value="list">List View</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </CardHeader>
-      </Card>
-
-      {/* Goals Content */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-3">
-            <Target className="h-5 w-5" />
-            Goals Overview ({filteredGoals.length} total)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {[...Array(6)].map((_, i) => (
-                <Skeleton key={i} className="h-48 w-full" />
-              ))}
-            </div>
-          ) : filteredGoals.length > 0 ? (
-            <Tabs value={viewMode} onValueChange={setViewMode} className="w-full">
-              <TabsContent value="hierarchy" className="space-y-6 mt-6">
-                <GoalsHierarchy
-                  goals={filteredGoals}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                  onUpdateProgress={handleUpdateProgressDialog}
-                  onStatusChange={handleStatusChange}
-                  onApprove={handleApprovalDialog}
-                  canEdit={canEditGoals}
-                  canUpdateProgress={canUpdateProgress}
-                  canApprove={canApproveGoals}
-                  onCardClick={handleCardClick}
-                />
-              </TabsContent>
-
-              <TabsContent value="list" className="space-y-6 mt-6">
+        {/* Organizational Goals Tab */}
+        <TabsContent value="organizational" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Company Goals</CardTitle>
+              <CardDescription>
+                View yearly and quarterly organizational goals
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {filteredGoals.map((goal) => (
+                  {[...Array(6)].map((_, i) => (
+                    <Skeleton key={i} className="h-48" />
+                  ))}
+                </div>
+              ) : organizationalGoals.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {organizationalGoals.map((goal) => (
+                    <GoalCard
+                      key={goal.id}
+                      goal={goal}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      onUpdateProgress={handleUpdateProgressDialog}
+                      onStatusChange={handleStatusChange}
+                      onViewDetails={handleViewDetails}
+                      canEdit={false}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Target className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">No organizational goals</h3>
+                  <p className="text-gray-600">Check back later for company-wide goals</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* My Individual Goals Tab */}
+        <TabsContent value="my" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Create and manage your personal performance goals
+            </p>
+            <Button onClick={() => setIsFormOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Goal
+            </Button>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>My Individual Goals ({myIndividualGoals.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {myIndividualGoals.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {myIndividualGoals.map((goal) => (
                     <GoalCard
                       key={goal.id}
                       goal={goal}
@@ -1300,65 +1174,146 @@ export default function GoalsPage() {
                       onUpdateProgress={handleUpdateProgressDialog}
                       onStatusChange={handleStatusChange}
                       onApprove={handleApprovalDialog}
-                      canEdit={canEditGoals}
-                      canUpdateProgress={canUpdateProgress}
-                      canApprove={canApproveGoals}
-                      onCardClick={handleCardClick}
+                      onRespond={handleRespondDialog}
+                      onRequestChange={handleChangeRequestDialog}
+                      onViewDetails={handleViewDetails}
+                      canEdit={canEditGoals || goal.created_by === user?.user_id}
                     />
                   ))}
                 </div>
-              </TabsContent>
-            </Tabs>
-          ) : (
-            <div className="text-center py-16">
-              <div className="h-16 w-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Target className="h-8 w-8 text-gray-400" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">No goals found</h3>
-              <p className="text-gray-600 mb-6 max-w-sm mx-auto">
-                {filterType !== "all" || filterStatus !== "all"
-                  ? "No goals match your current filters. Try adjusting your filters above."
-                  : "Start building your organization's goal structure by creating the first goal."}
-              </p>
-              {canCreateAnyGoal && filterType === "all" && filterStatus === "all" && (
-                <Button onClick={() => setIsFormOpen(true)} className="bg-blue-600 hover:bg-blue-700">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Organization Goal
-                </Button>
+              ) : (
+                <div className="text-center py-12">
+                  <Target className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">No individual goals yet</h3>
+                  <p className="text-gray-600 mb-4">Create your first personal goal to get started</p>
+                  <Button onClick={() => setIsFormOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Goal
+                  </Button>
+                </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Team Goals Tab (Supervisors only) */}
+        {isSupervisor && (
+          <TabsContent value="team" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                Review and approve your team members' goals
+              </p>
+              <Button onClick={() => setIsFormOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Goal for Team Member
+              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Team Member Goals ({superviseeGoals.length})</CardTitle>
+                <CardDescription>
+                  {supervisees.length} team members
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {superviseeGoals.length > 0 ? (
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {superviseeGoals.map((goal) => (
+                      <GoalCard
+                        key={goal.id}
+                        goal={goal}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                        onUpdateProgress={handleUpdateProgressDialog}
+                        onStatusChange={handleStatusChange}
+                        onApprove={handleApprovalDialog}
+                        onViewDetails={handleViewDetails}
+                        canEdit={canEditGoals}
+                        canApprove={canApproveGoals || true}
+                        isTeamGoal={true}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No team goals yet</h3>
+                    <p className="text-gray-600 mb-4">Create goals for your team members or wait for them to create their own</p>
+                    <Button onClick={() => setIsFormOpen(true)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Goal for Team Member
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+      </Tabs>
 
       {/* Dialogs */}
-      <GoalForm
+      <IndividualGoalForm
         goal={editingGoal}
         isOpen={isFormOpen}
-        onClose={handleCloseForm}
+        onClose={() => {
+          setIsFormOpen(false)
+          setEditingGoal(null)
+        }}
         onSubmit={editingGoal ? handleUpdate : handleCreate}
-        canCreateOrganizationalGoals={canCreateOrganizationalGoals}
+        canCreateForSupervisee={isSupervisor && activeTab === "team"}
+        supervisees={supervisees}
       />
 
       <ProgressUpdateDialog
         goal={updatingGoal}
         isOpen={isProgressOpen}
-        onClose={handleCloseProgress}
+        onClose={() => {
+          setIsProgressOpen(false)
+          setUpdatingGoal(null)
+        }}
         onSubmit={handleUpdateProgress}
-      />
-
-      <GoalDetailDialog
-        goal={selectedGoal}
-        isOpen={isDetailOpen}
-        onClose={handleCloseDetail}
-        allGoals={goalsArray}
       />
 
       <GoalApprovalDialog
         goal={approvingGoal}
         isOpen={isApprovalOpen}
-        onClose={handleCloseApproval}
+        onClose={() => {
+          setIsApprovalOpen(false)
+          setApprovingGoal(null)
+        }}
         onSubmit={handleApprove}
+      />
+
+      <ChangeRequestDialog
+        goal={changingGoal}
+        isOpen={isChangeRequestOpen}
+        onClose={() => {
+          setIsChangeRequestOpen(false)
+          setChangingGoal(null)
+        }}
+        onSubmit={handleRequestChange}
+      />
+
+      <RespondToGoalDialog
+        goal={respondingGoal}
+        isOpen={isRespondOpen}
+        onClose={() => {
+          setIsRespondOpen(false)
+          setRespondingGoal(null)
+        }}
+        onSubmit={handleRespond}
+      />
+
+      <GoalDetailDialog
+        goal={detailGoal}
+        isOpen={isDetailOpen}
+        onClose={() => {
+          setIsDetailOpen(false)
+          setDetailGoal(null)
+        }}
+        parentGoal={parentGoalForDetail}
+        supervisor={supervisorForDetail}
       />
     </div>
   )

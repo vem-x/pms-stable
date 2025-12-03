@@ -30,6 +30,11 @@ class InitiativeWorkflowService:
                           team_head_id: Optional[uuid.UUID] = None, document_ids: Optional[List[uuid.UUID]] = None) -> Initiative:
         """
         Create new initiative with scope validation and assignment
+
+        Business Logic:
+        - If creator is assigning to themselves: Status = PENDING_APPROVAL (requires supervisor approval)
+        - If creator is a supervisor creating for supervisee(s): Status = ASSIGNED (no approval needed)
+        - Any other case defaults to PENDING_APPROVAL for safety
         """
         # Validate assignment scope
         self.validate_initiative_assignment(creator, assignee_ids)
@@ -37,6 +42,26 @@ class InitiativeWorkflowService:
         # Validate document ownership if documents are provided
         if document_ids:
             self.validate_document_ownership(creator, document_ids)
+
+        # Determine initial status based on business rules
+        # Check if creator is assigning to themselves
+        is_self_assigned = creator.id in assignee_ids and len(assignee_ids) == 1
+
+        # Check if creator has supervisees (is a supervisor)
+        has_supervisees = self.db.query(User).filter(User.supervisor_id == creator.id).count() > 0
+
+        # Determine initial status
+        if is_self_assigned:
+            # Individual creating initiative for themselves - needs approval
+            initial_status = InitiativeStatus.PENDING_APPROVAL
+        elif has_supervisees and creator.id not in assignee_ids:
+            # Supervisor creating for others (not including self) - no approval needed
+            initial_status = InitiativeStatus.ASSIGNED
+            assigned_by = creator.id
+        else:
+            # Default to pending approval for safety
+            initial_status = InitiativeStatus.PENDING_APPROVAL
+            assigned_by = None
 
         # Create initiative
         initiative = Initiative(
@@ -46,8 +71,13 @@ class InitiativeWorkflowService:
             urgency=initiative_data.get('urgency', 'medium'),
             due_date=initiative_data['due_date'],
             created_by=creator.id,
-            team_head_id=team_head_id
+            assigned_by=assigned_by if initial_status == InitiativeStatus.ASSIGNED else None,
+            team_head_id=team_head_id,
+            status=initial_status
         )
+
+        if initial_status == InitiativeStatus.ASSIGNED:
+            initiative.approved_at = datetime.utcnow()
 
         self.db.add(initiative)
         self.db.flush()  # Get initiative ID
@@ -66,9 +96,16 @@ class InitiativeWorkflowService:
 
         self.db.commit()
 
-        # Send notifications
+        # Send notifications based on initial status
         assignees = self.db.query(User).filter(User.id.in_(assignee_ids)).all()
-        self.notification_service.notify_initiative_assigned(initiative, assignees, creator)
+
+        if initial_status == InitiativeStatus.PENDING_APPROVAL:
+            # Notify supervisor that initiative needs approval
+            if creator.supervisor:
+                self.notification_service.notify_initiative_created(initiative, creator, creator.supervisor)
+        elif initial_status == InitiativeStatus.ASSIGNED:
+            # Notify assignees that initiative has been assigned to them
+            self.notification_service.notify_initiative_assigned(initiative, assignees, creator)
 
         return initiative
 
@@ -112,14 +149,14 @@ class InitiativeWorkflowService:
 
     def start_initiative(self, initiative_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         """
-        Start an initiative (change status from PENDING to ONGOING)
+        Start an initiative (change status from ASSIGNED to STARTED)
         """
         initiative = self.db.query(Initiative).filter(Initiative.id == initiative_id).first()
         if not initiative:
             return False
 
-        if initiative.status != InitiativeStatus.PENDING:
-            raise ValueError("Initiative can only be started from PENDING status")
+        if initiative.status != InitiativeStatus.ASSIGNED:
+            raise ValueError("Initiative can only be started from ASSIGNED status")
 
         # Verify user is assigned to initiative
         assignment = self.db.query(InitiativeAssignment).filter(
@@ -129,7 +166,7 @@ class InitiativeWorkflowService:
         if not assignment:
             raise ValueError("User is not assigned to this initiative")
 
-        initiative.status = InitiativeStatus.ONGOING
+        initiative.status = InitiativeStatus.STARTED
         self.db.commit()
 
         return True
@@ -155,7 +192,7 @@ class InitiativeWorkflowService:
             if pending_extension:
                 raise ValueError("Cannot submit overdue initiative with pending extension request")
 
-        if initiative.status not in [InitiativeStatus.ONGOING, InitiativeStatus.OVERDUE]:
+        if initiative.status not in [InitiativeStatus.STARTED, InitiativeStatus.OVERDUE]:
             raise ValueError("Initiative must be started to submit")
 
         # For group initiatives, verify submitter is team head
@@ -227,6 +264,67 @@ class InitiativeWorkflowService:
             initiative.status = InitiativeStatus.ONGOING
             assignees = [assignment.user for assignment in initiative.assignments]
             self.notification_service.notify_initiative_redo_requested(initiative, assignees, feedback)
+
+        self.db.commit()
+        return True
+
+    def approve_initiative(self, initiative_id: uuid.UUID, approver_id: uuid.UUID,
+                           approved: bool, rejection_reason: Optional[str] = None) -> bool:
+        """
+        Approve or reject a pending initiative
+        Only the supervisor of the initiative creator can approve
+
+        Args:
+            initiative_id: ID of the initiative to approve
+            approver_id: ID of the user approving/rejecting
+            approved: True to approve, False to reject
+            rejection_reason: Required if rejected
+
+        Returns:
+            bool: True if successful
+
+        Raises:
+            ValueError: If validation fails
+        """
+        initiative = self.db.query(Initiative).filter(Initiative.id == initiative_id).first()
+        if not initiative:
+            raise ValueError("Initiative not found")
+
+        if initiative.status != InitiativeStatus.PENDING_APPROVAL:
+            raise ValueError(f"Initiative is not pending approval (current status: {initiative.status})")
+
+        # Get the initiative creator
+        creator = self.db.query(User).filter(User.id == initiative.created_by).first()
+        if not creator:
+            raise ValueError("Initiative creator not found")
+
+        # Verify approver is the creator's supervisor
+        if creator.supervisor_id != approver_id:
+            raise ValueError("Only the initiative creator's supervisor can approve this initiative")
+
+        # Apply approval/rejection
+        if approved:
+            initiative.status = InitiativeStatus.ASSIGNED
+            initiative.assigned_by = approver_id
+            initiative.approved_at = datetime.utcnow()
+            initiative.rejected_at = None
+
+            # Send notification to assignees
+            assignees = [assignment.user for assignment in initiative.assignments]
+            approver = self.db.query(User).filter(User.id == approver_id).first()
+            self.notification_service.notify_initiative_approved(initiative, assignees, approver)
+        else:
+            if not rejection_reason:
+                raise ValueError("Rejection reason is required when rejecting an initiative")
+
+            initiative.status = InitiativeStatus.REJECTED
+            initiative.feedback = rejection_reason  # Store rejection reason in feedback field
+            initiative.rejected_at = datetime.utcnow()
+            initiative.assigned_by = None
+
+            # Send notification to creator
+            approver = self.db.query(User).filter(User.id == approver_id).first()
+            self.notification_service.notify_initiative_rejected(initiative, creator, approver, rejection_reason)
 
         self.db.commit()
         return True
