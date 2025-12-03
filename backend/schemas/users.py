@@ -5,6 +5,7 @@ from enum import Enum
 import uuid
 
 class UserStatus(str, Enum):
+    PENDING_ACTIVATION = "pending_activation"
     ACTIVE = "active"
     SUSPENDED = "suspended"
     ON_LEAVE = "on_leave"
@@ -20,7 +21,7 @@ class UserBase(BaseModel):
     skillset: Optional[str] = None
     level: Optional[int] = Field(None, ge=1, le=17)  # Civil service grade levels 1-17
     job_title: Optional[str] = Field(None, max_length=255)
-    status: UserStatus = UserStatus.ACTIVE
+    status: UserStatus = UserStatus.PENDING_ACTIVATION
 
 class UserCreate(UserBase):
     organization_id: uuid.UUID

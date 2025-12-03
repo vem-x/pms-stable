@@ -5,7 +5,7 @@ Based on CLAUDE.md specification with onboarding flow
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 from database import get_db
 from models import User, UserStatus
@@ -107,6 +107,13 @@ async def onboard_user(
             detail="Invalid or expired onboarding token"
         )
 
+    # Check if token has expired
+    if user.onboarding_token_expires_at and user.onboarding_token_expires_at < datetime.now():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Onboarding token has expired. Please contact your administrator to resend the onboarding link."
+        )
+
     if user.password_hash:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -116,7 +123,8 @@ async def onboard_user(
     # Set password and clear onboarding token
     user.password_hash = get_password_hash(onboarding_data.password)
     user.onboarding_token = None
-    user.email_verified_at = db.func.now()
+    user.onboarding_token_expires_at = None
+    user.email_verified_at = datetime.now()
     user.status = UserStatus.ACTIVE
 
     db.commit()
@@ -137,8 +145,9 @@ async def reset_password(
         # Don't reveal if email exists for security
         return {"message": "If the email exists, a reset link has been sent"}
 
-    # Generate new onboarding token
+    # Generate new onboarding token with 7-day expiration
     user.onboarding_token = generate_onboarding_token()
+    user.onboarding_token_expires_at = datetime.now() + timedelta(days=7)
     db.commit()
 
     # Send password reset email

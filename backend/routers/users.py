@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from datetime import datetime, timedelta
 import uuid
 import os
 import shutil
@@ -42,6 +43,7 @@ async def get_users(
     per_page: int = Query(50, ge=1, le=100),
     status_filter: Optional[UserStatus] = None,
     organization_id: Optional[uuid.UUID] = None,
+    activated_filter: Optional[bool] = Query(None, description="Filter by activation status: true=activated, false=not activated"),
     current_user: UserSession = Depends(get_current_user),
     db: Session = Depends(get_db),
     permission_service: UserPermissions = Depends(get_permission_service)
@@ -49,6 +51,7 @@ async def get_users(
     """
     List users with scope filtering
     Users only see other users within their organizational reach
+    - activated_filter: true = users who have set their password, false = users who haven't (still have onboarding_token)
     """
     user = db.query(User).filter(User.id == current_user.user_id).first()
     if not user:
@@ -68,6 +71,15 @@ async def get_users(
         if organization_id not in accessible_org_ids:
             raise HTTPException(status_code=403, detail="Cannot access users in this organization")
         query = query.filter(User.organization_id == organization_id)
+
+    # Filter by activation status
+    if activated_filter is not None:
+        if activated_filter:
+            # Activated users have password_hash set
+            query = query.filter(User.password_hash.isnot(None))
+        else:
+            # Non-activated users still have onboarding_token and no password_hash
+            query = query.filter(User.password_hash.is_(None), User.onboarding_token.isnot(None))
 
     # Get total count
     total = query.count()
@@ -113,8 +125,9 @@ async def create_user(
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Generate onboarding token
+    # Generate onboarding token with 7-day expiration
     onboarding_token = generate_onboarding_token()
+    token_expiration = datetime.now() + timedelta(days=7)
 
     # Compute full name from separate fields
     name_parts = [user_data.first_name]
@@ -140,6 +153,7 @@ async def create_user(
         role_id=user_data.role_id,
         supervisor_id=user_data.supervisor_id,
         onboarding_token=onboarding_token,
+        onboarding_token_expires_at=token_expiration,
         password_hash=None  # Will be set during onboarding
     )
 
@@ -730,4 +744,126 @@ async def assign_supervisor(
     db.refresh(user)
 
     return UserSchema(**enhance_user_with_supervisor(user, db))
+
+@router.post("/{user_id}/resend-onboarding")
+async def resend_onboarding_email(
+    user_id: uuid.UUID,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    permission_service: UserPermissions = Depends(get_permission_service)
+):
+    """
+    Resend onboarding email to a user who hasn't activated yet
+    Generates a new token with fresh expiration
+    Requires USER_EDIT permission
+    """
+    requester = db.query(User).filter(User.id == current_user.user_id).first()
+    if not requester:
+        raise HTTPException(status_code=404, detail="Requester not found")
+
+    if not permission_service.user_has_permission(requester, SystemPermissions.USER_EDIT):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check scope access
+    if not permission_service.user_can_access_organization(requester, user.organization_id):
+        raise HTTPException(status_code=403, detail="Cannot access this user")
+
+    # Check if user has already been onboarded
+    if user.password_hash:
+        raise HTTPException(status_code=400, detail="User has already been onboarded")
+
+    # Generate new onboarding token with 7-day expiration
+    onboarding_token = generate_onboarding_token()
+    token_expiration = datetime.now() + timedelta(days=7)
+
+    user.onboarding_token = onboarding_token
+    user.onboarding_token_expires_at = token_expiration
+
+    # Create history entry
+    history = UserHistory(
+        user_id=user.id,
+        admin_id=requester.id,
+        action="onboarding_token_regenerated",
+        old_value=None,
+        new_value={"token_expires_at": token_expiration.isoformat()}
+    )
+    db.add(history)
+
+    db.commit()
+    db.refresh(user)
+
+    # Resend onboarding email
+    from utils.notifications import NotificationService
+    notification_service = NotificationService(db)
+    notification_service.notify_user_created(user, onboarding_token)
+
+    return {
+        "message": "Onboarding email resent successfully",
+        "token_expires_at": token_expiration.isoformat()
+    }
+
+@router.post("/{user_id}/send-password-reset")
+async def send_password_reset_link(
+    user_id: uuid.UUID,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    permission_service: UserPermissions = Depends(get_permission_service)
+):
+    """
+    Send password reset link to an active user
+    Generates a new onboarding token (reused for password reset)
+    Requires USER_EDIT permission
+    """
+    requester = db.query(User).filter(User.id == current_user.user_id).first()
+    if not requester:
+        raise HTTPException(status_code=404, detail="Requester not found")
+
+    if not permission_service.user_has_permission(requester, SystemPermissions.USER_EDIT):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check scope access
+    if not permission_service.user_can_access_organization(requester, user.organization_id):
+        raise HTTPException(status_code=403, detail="Cannot access this user")
+
+    # Check if user has a password (is onboarded)
+    if not user.password_hash:
+        raise HTTPException(status_code=400, detail="User hasn't been onboarded yet. Use resend-onboarding instead.")
+
+    # Generate new reset token with 7-day expiration
+    reset_token = generate_onboarding_token()
+    token_expiration = datetime.now() + timedelta(days=7)
+
+    user.onboarding_token = reset_token
+    user.onboarding_token_expires_at = token_expiration
+
+    # Create history entry
+    history = UserHistory(
+        user_id=user.id,
+        admin_id=requester.id,
+        action="password_reset_token_generated",
+        old_value=None,
+        new_value={"token_expires_at": token_expiration.isoformat()}
+    )
+    db.add(history)
+
+    db.commit()
+    db.refresh(user)
+
+    # Send password reset email
+    from utils.notifications import NotificationService
+    notification_service = NotificationService(db)
+    notification_service.notify_password_reset(user, reset_token)
+
+    return {
+        "message": "Password reset link sent successfully",
+        "token_expires_at": token_expiration.isoformat()
+    }
 

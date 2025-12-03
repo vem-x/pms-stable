@@ -22,6 +22,7 @@ class ScopeOverride(str, enum.Enum):
 
 # User Status Enums
 class UserStatus(str, enum.Enum):
+    PENDING_ACTIVATION = "pending_activation"
     ACTIVE = "active"
     SUSPENDED = "suspended"
     ON_LEAVE = "on_leave"
@@ -174,6 +175,7 @@ class User(Base):
     password_hash = Column(String(255))
     email_verified_at = Column(DateTime(timezone=True))
     onboarding_token = Column(String(255))
+    onboarding_token_expires_at = Column(DateTime(timezone=True))  # Token expiration time
     profile_image_path = Column(String(500), nullable=True)  # Local file path for profile images
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
