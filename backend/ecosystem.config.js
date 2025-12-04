@@ -1,17 +1,21 @@
+// PM2 Ecosystem Configuration - PMS Backend
+// Automatically runs migrations before starting the backend server
 module.exports = {
   apps: [{
     name: 'pms-backend',
-    script: 'start_with_migrations.py',
-    interpreter: 'python',
-    cwd: 'C:/Users/vem/pms-stable/backend',
+    script: 'powershell.exe',
+    args: '-ExecutionPolicy Bypass -File start-with-migrations.ps1',
+    // cwd defaults to the directory where this file is located
     env: {
       ENVIRONMENT: 'production',
-      DATABASE_URL: 'postgresql://pms_user:pms_password@172.28.0.1:5432/pms_db',
-      JWT_SECRET_KEY: 'your-super-secret-jwt-key-change-in-production',
-      CORS_ALLOWED_ORIGINS: 'http://localhost:3000,https://localhost:3000,http://localhost:3002,https://localhost:3002,http://160.226.0.67:3000,http://160.226.0.67:3002'
+      // DATABASE_URL should be set in .env file or environment variables
+      // JWT_SECRET_KEY should be set in .env file or environment variables
+      // CORS_ALLOWED_ORIGINS should be set in .env file or environment variables
     },
     autorestart: true,
     watch: false,
-    max_memory_restart: '500M'
+    max_memory_restart: '500M',
+    restart_delay: 5000,
+    kill_timeout: 5000
   }]
 };
