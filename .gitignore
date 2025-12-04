@@ -143,13 +143,10 @@ logs/
 *.crt
 ssl/
 
-# Migration scripts (already removed, keeping pattern to prevent re-adding)
-*migration*.py
-*migrate*.py
+# Database migration data files (not the migration scripts themselves)
+# Note: alembic/ directory and alembic.ini SHOULD be tracked in git
 *migration*.sql
 *migrate*.sql
-alembic.ini
-alembic/
 
 # Temporary files
 *.tmp
