@@ -19,8 +19,24 @@ $logFile = "C:\Users\vem\pms-stable\pm2-startup.log"
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 try {
-    # Start backend directly from ecosystem file
+    # Navigate to backend directory
     Set-Location C:\Users\vem\pms-stable\backend
+    Add-Content -Path $logFile -Value "$timestamp - Starting database migration process..."
+
+    # Run Alembic migrations
+    $migrationOutput = python -m alembic upgrade head 2>&1
+    $migrationExitCode = $LASTEXITCODE
+
+    if ($migrationExitCode -eq 0) {
+        Add-Content -Path $logFile -Value "$timestamp - Database migrations completed successfully"
+        Add-Content -Path $logFile -Value "$timestamp - Migration output: $migrationOutput"
+    } else {
+        Add-Content -Path $logFile -Value "$timestamp - ERROR: Database migration failed with exit code $migrationExitCode"
+        Add-Content -Path $logFile -Value "$timestamp - Migration error output: $migrationOutput"
+        throw "Database migration failed. Backend startup aborted."
+    }
+
+    # Start backend directly from ecosystem file (only if migrations succeeded)
     pm2 start ecosystem.config.js
     Add-Content -Path $logFile -Value "$timestamp - Backend started from ecosystem.config.js"
     
