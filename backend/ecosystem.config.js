@@ -5,7 +5,7 @@ module.exports = {
     {
       name: "pms-backend",
       script: "uvicorn",
-      args: "main:app --host 0.0.0.0 --port 8000 --loop asyncio --log-level info",
+      args: "main:app --host 0.0.0.0 --port 8000 ",
       interpreter: "none",
       autorestart: true,
       watch: false,
