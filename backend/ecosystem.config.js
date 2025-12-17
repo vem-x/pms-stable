@@ -4,14 +4,15 @@ module.exports = {
   apps: [
     {
       name: "pms-backend",
-      script: "uvicorn",
-      args: "main:app --host 0.0.0.0 --port 8000 ",
+      script: "python",
+      args: "-m uvicorn main:app --host 0.0.0.0 --port 8000",
       interpreter: "none",
+      cwd: "C:/Users/vem/pms-stable/backend",
       autorestart: true,
       watch: false,
       max_memory_restart: "500M",
+      env_file: ".env",
       env: {
-        ENVIRONMENT: "production",
         PYTHONUNBUFFERED: "1"
       }
     }
