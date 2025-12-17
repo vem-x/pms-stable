@@ -76,9 +76,6 @@ class InitiativeWorkflowService:
             status=initial_status
         )
 
-        if initial_status == InitiativeStatus.ASSIGNED:
-            initiative.approved_at = datetime.utcnow()
-
         self.db.add(initiative)
         self.db.flush()  # Get initiative ID
 
@@ -250,7 +247,7 @@ class InitiativeWorkflowService:
         Review and score submitted initiative (UNDER_REVIEW status)
 
         Workflow:
-        - If approved=True: Initiative → APPROVED (with score/grade)
+        - If approved=True: Initiative → COMPLETED (with score/grade)
         - If approved=False: Initiative → ONGOING (redo requested with feedback)
 
         Only initiative creator/supervisor can review
@@ -277,10 +274,11 @@ class InitiativeWorkflowService:
         initiative.reviewed_at = datetime.utcnow()
 
         if approved:
-            # Approve with final grade
-            initiative.status = InitiativeStatus.APPROVED
+            # Complete with final grade
+            initiative.status = InitiativeStatus.COMPLETED
+            initiative.completed_at = datetime.utcnow()
             assignees = [assignment.user for assignment in initiative.assignments]
-            self.notification_service.notify_initiative_approved(initiative, assignees, score)
+            self.notification_service.notify_initiative_completed(initiative, assignees, score)
         else:
             # Request redo - send back to ONGOING status
             initiative.status = InitiativeStatus.ONGOING
@@ -329,7 +327,6 @@ class InitiativeWorkflowService:
             # When supervisor approves a staff-created initiative, it goes to PENDING (ready to start)
             initiative.status = InitiativeStatus.PENDING
             initiative.assigned_by = approver_id
-            initiative.approved_at = datetime.utcnow()
             initiative.rejected_at = None
 
             # Send notification to assignees
@@ -437,7 +434,7 @@ class InitiativeWorkflowService:
         ).all()
 
         for initiative in active_initiatives:
-            if initiative.due_date < now and initiative.status != InitiativeStatus.APPROVED:
+            if initiative.due_date < now and initiative.status != InitiativeStatus.COMPLETED:
                 initiative.status = InitiativeStatus.OVERDUE
                 self.db.add(initiative)
                 stakeholders = [assignment.user for assignment in initiative.assignments]

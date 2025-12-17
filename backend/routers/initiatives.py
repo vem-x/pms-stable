@@ -18,7 +18,7 @@ from models import Initiative, InitiativeStatus, InitiativeType, User
 from schemas.initiatives import (
     InitiativeCreate, InitiativeUpdate, InitiativeStatusUpdate, InitiativeSubmission, InitiativeReview,
     InitiativeExtensionRequest, InitiativeExtensionReview, Initiative as InitiativeSchema,
-    InitiativeWithAssignees, InitiativeSubmissionDetail, InitiativeDocument, InitiativeExtension,
+    InitiativeWithAssignees, InitiativeForReview, InitiativeSubmissionDetail, InitiativeDocument, InitiativeExtension,
     InitiativeList, InitiativeStats, InitiativeUrgency, InitiativeAssignee, InitiativeApproval
 )
 from schemas.auth import UserSession
@@ -485,7 +485,7 @@ async def get_initiative_stats(
     average_score = sum(initiative.score for initiative in scored_initiatives) / len(scored_initiatives) if scored_initiatives else None
 
     completed_or_approved = sum(1 for initiative in initiatives
-                              if initiative.status in [InitiativeStatus.UNDER_REVIEW, InitiativeStatus.APPROVED])
+                              if initiative.status in [InitiativeStatus.UNDER_REVIEW, InitiativeStatus.COMPLETED])
     completion_rate = (completed_or_approved / total_initiatives * 100) if total_initiatives > 0 else 0
 
     return InitiativeStats(
@@ -945,6 +945,82 @@ async def get_initiative_submission(
             for doc in documents
         ]
     }
+
+@router.get("/{initiative_id}/for-review", response_model=InitiativeForReview)
+async def get_initiative_for_review(
+    initiative_id: uuid.UUID,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    initiative_service: InitiativeWorkflowService = Depends(get_initiative_service)
+):
+    """
+    Get initiative with submission details for review
+    Returns initiative details along with the submission report and documents
+    Only accessible by initiative creator or supervisor
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if user can see this initiative
+    if not initiative_service.get_initiative_visibility(user, initiative_id):
+        raise HTTPException(status_code=403, detail="Cannot access this initiative")
+
+    initiative = db.query(Initiative).filter(Initiative.id == initiative_id).first()
+    if not initiative:
+        raise HTTPException(status_code=404, detail="Initiative not found")
+
+    # Verify user is authorized to review (creator or supervisor)
+    creator = db.query(User).filter(User.id == initiative.created_by).first()
+    is_supervisor = creator and creator.supervisor_id == user.id
+
+    if initiative.created_by != user.id and not is_supervisor:
+        raise HTTPException(status_code=403, detail="Only initiative creator or supervisor can review")
+
+    # Get assignees
+    assignees = []
+    for assignment in initiative.assignments:
+        assignees.append({
+            "user_id": str(assignment.user.id),
+            "user_name": assignment.user.name,
+            "user_email": assignment.user.email,
+            "assigned_at": assignment.created_at
+        })
+
+    # Get submission details
+    from models import InitiativeSubmission as SubmissionModel, InitiativeDocument as DocumentModel
+    submission = db.query(SubmissionModel).filter(
+        SubmissionModel.initiative_id == initiative_id
+    ).first()
+
+    submission_data = None
+    if submission:
+        # Get submission documents
+        documents = db.query(DocumentModel).filter(
+            DocumentModel.initiative_id == initiative_id
+        ).all()
+
+        submitter = db.query(User).filter(User.id == submission.submitted_by).first()
+        submission_data = InitiativeSubmissionDetail(
+            id=submission.id,
+            report=submission.report,
+            submitted_by=submission.submitted_by,
+            submitter_name=submitter.name if submitter else None,
+            submitted_at=submission.submitted_at,
+            documents=[{
+                "id": str(doc.id),
+                "file_name": doc.file_name,
+                "file_path": doc.file_path,
+                "uploaded_by": str(doc.uploaded_by),
+                "uploaded_at": doc.uploaded_at
+            } for doc in documents]
+        )
+
+    initiative_data = InitiativeForReview.from_orm(initiative)
+    initiative_data.assignments = assignees
+    initiative_data.submission = submission_data
+
+    return initiative_data
 
 @router.post("/{initiative_id}/review", response_model=InitiativeSchema)
 async def review_initiative(

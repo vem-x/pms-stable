@@ -863,7 +863,7 @@ async def get_organization_performance(
 
         # Calculate task metrics
         total_tasks = len(tasks)
-        completed_tasks = len([t for t in tasks if t.status == InitiativeStatus.APPROVED])
+        completed_tasks = len([t for t in tasks if t.status == InitiativeStatus.COMPLETED])
         task_scores = [t.score for t in tasks if t.score is not None]
         avg_task_score = sum(task_scores) / len(task_scores) if task_scores else None
 
@@ -2860,7 +2860,7 @@ def _get_employee_task_performance(user_id: int, date_filter: datetime, db: Sess
 
     # Calculate completion rate based on TaskStatus
     from models import InitiativeStatus
-    approved_tasks = [t for t in tasks if t.status == InitiativeStatus.APPROVED]
+    approved_tasks = [t for t in tasks if t.status == InitiativeStatus.COMPLETED]
     completion_rate = (len(approved_tasks) / len(tasks)) * 100 if tasks else 0
 
     # Calculate efficiency based on task scores (if available)

@@ -58,7 +58,7 @@ class InitiativeStatus(str, enum.Enum):
     PENDING = "PENDING"  # Accepted or approved, ready to start work
     ONGOING = "ONGOING"  # Actively working on the initiative
     UNDER_REVIEW = "UNDER_REVIEW"  # Submitted for supervisor review
-    APPROVED = "APPROVED"  # Supervisor reviewed and approved with grade
+    COMPLETED = "COMPLETED"  # Supervisor reviewed and approved with grade
     REJECTED = "REJECTED"  # Supervisor rejected during approval
     OVERDUE = "OVERDUE"  # Past due date
 
@@ -311,7 +311,7 @@ class Initiative(Base):
     # Workflow timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    approved_at = Column(DateTime(timezone=True))  # When supervisor approved for assignment
+    completed_at = Column(DateTime(timezone=True))  # When supervisor completed final review
     rejected_at = Column(DateTime(timezone=True))  # When supervisor rejected
     reviewed_at = Column(DateTime(timezone=True))  # When final review completed
 

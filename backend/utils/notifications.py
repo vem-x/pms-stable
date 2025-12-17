@@ -298,8 +298,12 @@ class NotificationService:
         except Exception as e:
             print(f"Error in notify_task_reviewed: {e}")
 
+    def notify_initiative_completed(self, initiative: Initiative, assignees: List[User], score: int):
+        """Notify assignees when initiative is completed with final review"""
+        self.notify_task_reviewed(initiative, assignees, score, initiative.feedback or "", True)
+
     def notify_initiative_approved(self, initiative: Initiative, assignees: List[User], score: int):
-        """Notify assignees when initiative is approved"""
+        """Notify assignees when initiative is approved (legacy, use notify_initiative_completed for final review)"""
         self.notify_task_reviewed(initiative, assignees, score, initiative.feedback or "", True)
 
     def notify_initiative_redo_requested(self, initiative: Initiative, assignees: List[User], feedback: str):

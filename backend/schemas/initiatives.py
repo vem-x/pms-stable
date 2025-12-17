@@ -14,7 +14,7 @@ class InitiativeStatus(str, Enum):
     PENDING = "PENDING"  # Accepted or approved, ready to start work
     ONGOING = "ONGOING"  # Actively working on the initiative
     UNDER_REVIEW = "UNDER_REVIEW"  # Submitted for supervisor review
-    APPROVED = "APPROVED"  # Supervisor reviewed and approved with grade
+    COMPLETED = "COMPLETED"  # Supervisor reviewed and approved with grade
     REJECTED = "REJECTED"  # Supervisor rejected during approval
     OVERDUE = "OVERDUE"  # Past due date
 
@@ -129,7 +129,7 @@ class InitiativeInDB(InitiativeBase):
     assigned_by: Optional[uuid.UUID] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
-    approved_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
     rejected_at: Optional[datetime] = None
     reviewed_at: Optional[datetime] = None
 
@@ -158,6 +158,10 @@ class InitiativeAssignee(BaseModel):
 
 class InitiativeWithAssignees(Initiative):
     assignments: List[InitiativeAssignee] = []
+
+class InitiativeForReview(InitiativeWithAssignees):
+    """Initiative with submission details for supervisor review"""
+    submission: Optional['InitiativeSubmissionDetail'] = None
 
 class InitiativeSubmissionDetail(BaseModel):
     """Initiative submission with documents"""
