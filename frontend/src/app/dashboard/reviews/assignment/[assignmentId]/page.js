@@ -10,7 +10,6 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
-import { Textarea } from "@/components/ui/textarea"
 import { GET, POST } from "@/lib/api"
 
 export default function AssignmentReviewPage() {
@@ -28,7 +27,8 @@ export default function AssignmentReviewPage() {
     if (assignmentId) {
       fetchAssignment()
     }
-  }, [assignmentId, fetchAssignment])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignmentId])
 
   const fetchAssignment = async () => {
     try {
@@ -42,8 +42,7 @@ export default function AssignmentReviewPage() {
       if (data.responses && Array.isArray(data.responses)) {
         data.responses.forEach(resp => {
           existingResponses[resp.question_id] = {
-            rating: resp.rating,
-            comments: resp.comments || ''
+            rating: resp.rating
           }
         })
       }
@@ -59,18 +58,7 @@ export default function AssignmentReviewPage() {
     setResponses(prev => ({
       ...prev,
       [questionId]: {
-        ...prev[questionId],
         rating: value[0]
-      }
-    }))
-  }
-
-  const handleCommentsChange = (questionId, value) => {
-    setResponses(prev => ({
-      ...prev,
-      [questionId]: {
-        ...prev[questionId],
-        comments: value
       }
     }))
   }
@@ -84,8 +72,7 @@ export default function AssignmentReviewPage() {
         .filter(([_, data]) => data.rating !== undefined && data.rating !== null)
         .map(([questionId, data]) => ({
           question_id: questionId,
-          rating: data.rating,
-          comment: data.comments || ''
+          rating: data.rating
         }))
 
       if (formattedResponses.length === 0) {
@@ -120,8 +107,7 @@ export default function AssignmentReviewPage() {
       // Format responses for backend
       const formattedResponses = Object.entries(responses).map(([questionId, data]) => ({
         question_id: questionId,
-        rating: data.rating,
-        comment: data.comments || ''
+        rating: data.rating
       }))
 
       await POST(`/api/reviews/assignments/${assignmentId}/submit`, {
@@ -262,18 +248,6 @@ export default function AssignmentReviewPage() {
                     <span>5 - Average</span>
                     <span>10 - Excellent</span>
                   </div>
-                </div>
-
-                {/* Comments */}
-                <div className="space-y-2">
-                  <Label>Comments (Optional)</Label>
-                  <Textarea
-                    value={response.comments || ''}
-                    onChange={(e) => handleCommentsChange(question.id, e.target.value)}
-                    placeholder="Add any additional comments or context..."
-                    disabled={isCompleted}
-                    className="min-h-[100px]"
-                  />
                 </div>
               </CardContent>
             </Card>

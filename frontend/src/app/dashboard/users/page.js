@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect } from "react"
-import { Plus, Users, Search, Filter, MoreHorizontal, Edit, Trash2, Mail, Eye } from "lucide-react"
-import { GET } from "@/lib/api"
+import { Plus, Users, Search, Filter, MoreHorizontal, Edit, Trash2, Mail, Eye, Send, Key } from "lucide-react"
+import { GET, POST } from "@/lib/api"
+import { toast } from "sonner"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -51,17 +52,19 @@ import {
 } from "@/lib/react-query"
 
 const statusColors = {
-  active: "bg-green-100 text-green-800",
-  suspended: "bg-red-100 text-red-800",
-  on_leave: "bg-yellow-100 text-yellow-800",
-  archived: "bg-gray-100 text-gray-800"
+  PENDING_ACTIVATION: "bg-blue-100 text-blue-800",
+  ACTIVE: "bg-green-100 text-green-800",
+  SUSPENDED: "bg-red-100 text-red-800",
+  ON_LEAVE: "bg-yellow-100 text-yellow-800",
+  ARCHIVED: "bg-gray-100 text-gray-800"
 }
 
 const statusLabels = {
-  active: "Active",
-  suspended: "Suspended",
-  on_leave: "On Leave",
-  archived: "Archived"
+  PENDING_ACTIVATION: "Pending Activation",
+  ACTIVE: "Active",
+  SUSPENDED: "Suspended",
+  ON_LEAVE: "On Leave",
+  ARCHIVED: "Archived"
 }
 
 function UserForm({ user, isOpen, onClose, onSubmit }) {
@@ -130,7 +133,7 @@ function UserForm({ user, isOpen, onClose, onSubmit }) {
       }
 
       try {
-        const response = await GET(`/api/users?organization_id=${formData.organization_id}&status_filter=active`)
+        const response = await GET(`/api/users?organization_id=${formData.organization_id}&status_filter=ACTIVE`)
         const filtered = response.users?.filter(u =>
           u.id !== user?.id && (!formData.level || u.level > formData.level)
         ) || []
@@ -434,6 +437,27 @@ function UserDetailsDialog({ user, isOpen, onClose }) {
   )
 }
 
+// Confirmation Dialog Component
+function ConfirmDialog({ isOpen, onClose, onConfirm, title, description }) {
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => {
+            onConfirm()
+            onClose()
+          }}>Confirm</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function UsersPage() {
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
@@ -441,6 +465,7 @@ export default function UsersPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', description: '', onConfirm: () => {} })
 
   const { data: users = [], isLoading } = useUsers({
     page: currentPage,
@@ -475,6 +500,40 @@ export default function UsersPage() {
 
   const handleStatusChange = (user, newStatus) => {
     updateStatusMutation.mutate({ id: user.id, status: newStatus })
+  }
+
+  const handleResendInvite = (user) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Resend Onboarding Invite',
+      description: `Send a new onboarding invite to ${user.email}?`,
+      onConfirm: async () => {
+        try {
+          await POST(`/api/users/${user.id}/resend-onboarding`, {})
+          toast.success(`Onboarding invite successfully resent to ${user.email}`)
+        } catch (error) {
+          console.error('Error resending invite:', error)
+          toast.error(error.message || 'Failed to resend invite')
+        }
+      }
+    })
+  }
+
+  const handleSendPasswordReset = (user) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Send Password Reset Link',
+      description: `Send a password reset link to ${user.email}?`,
+      onConfirm: async () => {
+        try {
+          await POST(`/api/users/${user.id}/send-password-reset`, {})
+          toast.success(`Password reset link successfully sent to ${user.email}`)
+        } catch (error) {
+          console.error('Error sending password reset:', error)
+          toast.error(error.message || 'Failed to send password reset link')
+        }
+      }
+    })
   }
 
   const handleCloseForm = () => {
@@ -555,10 +614,11 @@ export default function UsersPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="suspended">Suspended</SelectItem>
-                  <SelectItem value="on_leave">On Leave</SelectItem>
-                  <SelectItem value="archived">Archived</SelectItem>
+                  <SelectItem value="PENDING_ACTIVATION">Pending Activation</SelectItem>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="SUSPENDED">Suspended</SelectItem>
+                  <SelectItem value="ON_LEAVE">On Leave</SelectItem>
+                  <SelectItem value="ARCHIVED">Archived</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -651,19 +711,46 @@ export default function UsersPage() {
                               <Edit className="mr-2 h-4 w-4" />
                               Edit
                             </DropdownMenuItem>
-                            {user.status === 'active' && (
-                              <DropdownMenuItem onClick={() => handleStatusChange(user, 'suspended')}>
-                                Suspend
-                              </DropdownMenuItem>
+
+                            {/* Status Actions */}
+                            {user.status === 'ACTIVE' ? (
+                              <>
+                                <DropdownMenuItem onClick={() => handleSendPasswordReset(user)}>
+                                  <Key className="mr-2 h-4 w-4" />
+                                  Send Password Reset
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleStatusChange(user, 'SUSPENDED')}>
+                                  Suspend
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleStatusChange(user, 'ON_LEAVE')}>
+                                  Mark as On Leave
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleStatusChange(user, 'ARCHIVED')}>
+                                  Archive
+                                </DropdownMenuItem>
+                              </>
+                            ) : user.status === 'PENDING_ACTIVATION' ? (
+                              <>
+                                <DropdownMenuItem onClick={() => handleResendInvite(user)}>
+                                  <Send className="mr-2 h-4 w-4" />
+                                  Resend Invite Link
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleStatusChange(user, 'ARCHIVED')}>
+                                  Archive
+                                </DropdownMenuItem>
+                              </>
+                            ) : (
+                              <>
+                                <DropdownMenuItem onClick={() => handleStatusChange(user, 'ACTIVE')}>
+                                  Reactivate
+                                </DropdownMenuItem>
+                                {user.status !== 'ARCHIVED' && (
+                                  <DropdownMenuItem onClick={() => handleStatusChange(user, 'ARCHIVED')}>
+                                    Archive
+                                  </DropdownMenuItem>
+                                )}
+                              </>
                             )}
-                            {user.status === 'suspended' && (
-                              <DropdownMenuItem onClick={() => handleStatusChange(user, 'active')}>
-                                Activate
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem onClick={() => handleStatusChange(user, 'archived')}>
-                              Archive
-                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -701,6 +788,14 @@ export default function UsersPage() {
           user={viewingUser}
           isOpen={!!viewingUser}
           onClose={() => setViewingUser(null)}
+        />
+
+        <ConfirmDialog
+          isOpen={confirmDialog.isOpen}
+          onClose={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
+          onConfirm={confirmDialog.onConfirm}
+          title={confirmDialog.title}
+          description={confirmDialog.description}
         />
       </div>
     </PermissionGuard>

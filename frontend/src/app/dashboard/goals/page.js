@@ -564,88 +564,52 @@ function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit }) {
 }
 
 function GoalApprovalDialog({ goal, isOpen, onClose, onSubmit }) {
-  const [formData, setFormData] = useState({
-    approved: true,
-    rejection_reason: ""
-  })
+  const handleApprove = () => {
+    onSubmit({ approved: true, rejection_reason: "" })
+  }
 
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    onSubmit(formData)
+  const handleReject = () => {
+    onSubmit({ approved: false, rejection_reason: "" })
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[500px]">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>Approve Goal</DialogTitle>
-            <DialogDescription>
-              Review and approve or reject this goal
-            </DialogDescription>
-          </DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Review Goal</DialogTitle>
+          <DialogDescription>
+            Approve or reject this goal
+          </DialogDescription>
+        </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="p-4 bg-gray-50 rounded-lg space-y-2">
-              <h3 className="font-semibold">{goal?.title}</h3>
-              {goal?.description && (
-                <p className="text-sm text-gray-600">{goal.description}</p>
-              )}
-              <div className="flex items-center gap-2 text-sm">
-                <Badge>{goal?.quarter} {goal?.year}</Badge>
-                {goal?.owner_name && (
-                  <span className="text-gray-600">Owner: {goal.owner_name}</span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant={formData.approved ? "default" : "outline"}
-                className="flex-1"
-                onClick={() => setFormData({ approved: true, rejection_reason: "" })}
-              >
-                <CheckCircle className="h-4 w-4 mr-2" />
-                Approve
-              </Button>
-              <Button
-                type="button"
-                variant={!formData.approved ? "destructive" : "outline"}
-                className="flex-1"
-                onClick={() => setFormData({ ...formData, approved: false })}
-              >
-                <XCircle className="h-4 w-4 mr-2" />
-                Reject
-              </Button>
-            </div>
-
-            {!formData.approved && (
-              <div className="grid gap-2">
-                <Label htmlFor="rejection_reason">
-                  Rejection Reason <span className="text-red-500">*</span>
-                </Label>
-                <Textarea
-                  id="rejection_reason"
-                  value={formData.rejection_reason}
-                  onChange={(e) => setFormData({ ...formData, rejection_reason: e.target.value })}
-                  placeholder="Explain why this goal is being rejected..."
-                  rows={4}
-                  required={!formData.approved}
-                />
-              </div>
+        <div className="space-y-4 py-4">
+          <div className="p-4 bg-gray-50 rounded-lg space-y-2">
+            <h3 className="font-semibold">{goal?.title}</h3>
+            {goal?.description && (
+              <p className="text-sm text-gray-600">{goal.description}</p>
             )}
+            <div className="flex items-center gap-2 text-sm">
+              <Badge>{goal?.quarter} {goal?.year}</Badge>
+              {goal?.owner_name && (
+                <span className="text-gray-600">Owner: {goal.owner_name}</span>
+              )}
+            </div>
           </div>
+        </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" variant={formData.approved ? "default" : "destructive"}>
-              {formData.approved ? "Approve Goal" : "Reject Goal"}
-            </Button>
-          </DialogFooter>
-        </form>
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" onClick={handleReject}>
+            <XCircle className="h-4 w-4 mr-2" />
+            Reject
+          </Button>
+          <Button type="button" onClick={handleApprove}>
+            <CheckCircle className="h-4 w-4 mr-2" />
+            Approve
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -1537,7 +1501,7 @@ export default function GoalsPage() {
                         onApprove={handleApprovalDialog}
                         onViewDetails={handleViewDetails}
                         canEdit={canEditGoals}
-                        canApprove={canApproveGoals || true}
+                        canApprove={canApproveGoals}
                         isTeamGoal={true}
                         currentUserId={user?.user_id}
                       />
@@ -1627,7 +1591,7 @@ export default function GoalsPage() {
         parentGoal={parentGoalForDetail}
         supervisor={supervisorForDetail}
         supervisee={superviseeForDetail}
-        canApprove={canApproveGoals || true}
+        canApprove={canApproveGoals}
         onApprove={handleApprovalDialog}
         currentUserId={user?.user_id}
       />

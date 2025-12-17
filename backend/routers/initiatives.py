@@ -83,6 +83,8 @@ async def get_initiatives(
     - assigned_to_me=false: All initiatives user can access based on permissions
         - With initiative_view_all permission: See all initiatives in system
         - Without initiative_view_all: Only see initiatives you created, are assigned to, or lead
+
+    NOTE: To see subordinate/supervisee initiatives, use GET /supervisees endpoint
     """
     from models import InitiativeAssignment
     from sqlalchemy.orm import joinedload
@@ -95,7 +97,8 @@ async def get_initiatives(
     query = db.query(Initiative).options(
         joinedload(Initiative.assignments).joinedload(InitiativeAssignment.user),
         joinedload(Initiative.creator),
-        joinedload(Initiative.team_head)
+        joinedload(Initiative.team_head),
+        joinedload(Initiative.goal)
     )
 
     user_initiative_ids_subquery = db.query(InitiativeAssignment.initiative_id).filter(InitiativeAssignment.user_id == user.id).subquery()
@@ -107,19 +110,13 @@ async def get_initiatives(
     else:
         # All Initiatives: Depends on permissions
         if "initiative_view_all" not in current_user.permissions:
-            # Get user's supervisees (users who report to this user)
-            supervisee_ids_subquery = db.query(User.id).filter(User.supervisor_id == user.id).subquery()
-            supervisee_initiative_ids_subquery = db.query(InitiativeAssignment.initiative_id).filter(
-                InitiativeAssignment.user_id.in_(supervisee_ids_subquery)
-            ).subquery()
-
-            # Regular users: See initiatives they're involved with + supervisees' initiatives
+            # Regular users: See ONLY initiatives they're directly involved with
+            # (Created by them, assigned to them, or they are team head)
+            # DOES NOT include supervisees' initiatives - use /supervisees for that
             visibility_filter = or_(
                 Initiative.created_by == user.id,  # Created by user
                 Initiative.id.in_(user_initiative_ids_subquery),  # Assigned to user
-                Initiative.team_head_id == user.id,  # User is team head
-                Initiative.created_by.in_(supervisee_ids_subquery),  # Created by supervisees
-                Initiative.id.in_(supervisee_initiative_ids_subquery)  # Assigned to supervisees
+                Initiative.team_head_id == user.id  # User is team head
             )
             query = query.filter(visibility_filter)
         # If user has initiative_view_all, no filter applied - see everything
@@ -308,6 +305,7 @@ async def approve_initiative(
     """
     Approve or reject a pending initiative
     Only the initiative creator's supervisor can approve
+    Approved initiatives go to PENDING status (ready to start)
     """
     user = db.query(User).filter(User.id == current_user.user_id).first()
     if not user:
@@ -329,6 +327,122 @@ async def approve_initiative(
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.put("/{initiative_id}/accept", response_model=InitiativeSchema)
+async def accept_initiative(
+    initiative_id: uuid.UUID,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Accept an ASSIGNED initiative
+    When supervisor creates and assigns to you, you must accept it
+    ASSIGNED → PENDING
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    initiative = db.query(Initiative).filter(Initiative.id == initiative_id).first()
+    if not initiative:
+        raise HTTPException(status_code=404, detail="Initiative not found")
+
+    # Verify user is assigned to this initiative
+    from models import InitiativeAssignment
+    is_assigned = db.query(InitiativeAssignment).filter(
+        InitiativeAssignment.initiative_id == initiative_id,
+        InitiativeAssignment.user_id == user.id
+    ).first()
+
+    if not is_assigned:
+        raise HTTPException(status_code=403, detail="You are not assigned to this initiative")
+
+    if initiative.status != InitiativeStatus.ASSIGNED:
+        raise HTTPException(status_code=400, detail=f"Initiative must be ASSIGNED to accept (current: {initiative.status})")
+
+    # Change status to PENDING
+    initiative.status = InitiativeStatus.PENDING
+    db.commit()
+    db.refresh(initiative)
+
+    return InitiativeSchema.from_orm(initiative)
+
+@router.put("/{initiative_id}/start", response_model=InitiativeSchema)
+async def start_initiative(
+    initiative_id: uuid.UUID,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Start a PENDING initiative
+    PENDING → ONGOING
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    initiative = db.query(Initiative).filter(Initiative.id == initiative_id).first()
+    if not initiative:
+        raise HTTPException(status_code=404, detail="Initiative not found")
+
+    # Verify user is assigned to this initiative
+    from models import InitiativeAssignment
+    is_assigned = db.query(InitiativeAssignment).filter(
+        InitiativeAssignment.initiative_id == initiative_id,
+        InitiativeAssignment.user_id == user.id
+    ).first()
+
+    if not is_assigned:
+        raise HTTPException(status_code=403, detail="You are not assigned to this initiative")
+
+    if initiative.status != InitiativeStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Initiative must be PENDING to start (current: {initiative.status})")
+
+    # Change status to ONGOING
+    initiative.status = InitiativeStatus.ONGOING
+    db.commit()
+    db.refresh(initiative)
+
+    return InitiativeSchema.from_orm(initiative)
+
+@router.put("/{initiative_id}/complete", response_model=InitiativeSchema)
+async def complete_initiative(
+    initiative_id: uuid.UUID,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Mark ONGOING initiative as complete
+    ONGOING → UNDER_REVIEW
+    Note: Use /submit endpoint to add report and documents
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    initiative = db.query(Initiative).filter(Initiative.id == initiative_id).first()
+    if not initiative:
+        raise HTTPException(status_code=404, detail="Initiative not found")
+
+    # Verify user is assigned to this initiative
+    from models import InitiativeAssignment
+    is_assigned = db.query(InitiativeAssignment).filter(
+        InitiativeAssignment.initiative_id == initiative_id,
+        InitiativeAssignment.user_id == user.id
+    ).first()
+
+    if not is_assigned:
+        raise HTTPException(status_code=403, detail="You are not assigned to this initiative")
+
+    if initiative.status != InitiativeStatus.ONGOING:
+        raise HTTPException(status_code=400, detail=f"Initiative must be ONGOING to complete (current: {initiative.status})")
+
+    # Change status to UNDER_REVIEW
+    initiative.status = InitiativeStatus.UNDER_REVIEW
+    db.commit()
+    db.refresh(initiative)
+
+    return InitiativeSchema.from_orm(initiative)
 
 @router.get("/stats", response_model=InitiativeStats)
 async def get_initiative_stats(
@@ -385,6 +499,244 @@ async def get_initiative_stats(
         completion_rate=completion_rate
     )
 
+@router.get("/assignable-users")
+async def get_assignable_users(
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get list of users that can be assigned to initiatives
+    - Regular users: All active users in their department
+    - Users with initiative_view_all: All active users in accessible organizations
+    """
+    from models import UserStatus
+    from utils.permissions import UserPermissions
+
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    permission_service = UserPermissions(db)
+
+    # Check if user has global assignment permission
+    if permission_service.user_has_permission(user, "initiative_view_all"):
+        # Get all users in accessible organizations
+        accessible_orgs = permission_service.get_accessible_organizations(user)
+        users = db.query(User).filter(
+            User.organization_id.in_(accessible_orgs),
+            User.status == UserStatus.ACTIVE
+        ).all()
+    else:
+        # Get users in same department only
+        users = db.query(User).filter(
+            User.organization_id == user.organization_id,
+            User.status == UserStatus.ACTIVE
+        ).all()
+
+    return [
+        {
+            "id": str(u.id),
+            "name": u.name,
+            "email": u.email,
+            "job_title": u.job_title
+        }
+        for u in users
+    ]
+
+@router.get("/has-supervisees")
+async def check_has_supervisees(
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Check if current user has supervisees (direct reports)
+    Used by frontend to determine whether to show supervisee initiatives tab
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    supervisee_count = db.query(User).filter(User.supervisor_id == user.id).count()
+
+    return {
+        "has_supervisees": supervisee_count > 0,
+        "supervisee_count": supervisee_count
+    }
+
+@router.get("/supervisees", response_model=List[InitiativeWithAssignees])
+async def get_supervisee_initiatives(
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all initiatives belonging to the current user's supervisees (direct reports)
+    Returns initiatives created by or assigned to your direct reports
+    This is where supervisors can see what their team members are working on
+
+    NOTE: This endpoint always returns successfully (empty array if no supervisees)
+    Use GET /has-supervisees to check if user has supervisees before calling this
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get all supervisees (direct reports)
+    supervisees = db.query(User).filter(User.supervisor_id == user.id).all()
+    supervisee_ids = [s.id for s in supervisees]
+
+    if not supervisee_ids:
+        return []
+
+    # Get initiatives created by or assigned to supervisees
+    from models import InitiativeAssignment
+    from sqlalchemy.orm import joinedload
+
+    supervisee_initiative_ids_subquery = db.query(InitiativeAssignment.initiative_id).filter(
+        InitiativeAssignment.user_id.in_(supervisee_ids)
+    ).subquery()
+
+    initiatives = db.query(Initiative).options(
+        joinedload(Initiative.assignments).joinedload(InitiativeAssignment.user),
+        joinedload(Initiative.creator),
+        joinedload(Initiative.team_head),
+        joinedload(Initiative.goal)
+    ).filter(
+        or_(
+            Initiative.created_by.in_(supervisee_ids),  # Created by supervisees
+            Initiative.id.in_(supervisee_initiative_ids_subquery)  # Assigned to supervisees
+        )
+    ).order_by(Initiative.created_at.desc()).all()
+
+    # Convert to InitiativeWithAssignees with proper field population
+    initiative_list = []
+    for initiative in initiatives:
+        initiative_dict = {
+            'id': initiative.id,
+            'title': initiative.title,
+            'description': initiative.description,
+            'type': initiative.type,
+            'urgency': initiative.urgency,
+            'due_date': initiative.due_date,
+            'goal_id': initiative.goal_id,
+            'status': initiative.status,
+            'score': initiative.score,
+            'feedback': initiative.feedback,
+            'team_head_id': initiative.team_head_id,
+            'created_by': initiative.created_by,
+            'reviewed_at': initiative.reviewed_at,
+            'created_at': initiative.created_at,
+            'updated_at': initiative.updated_at,
+            'creator_name': initiative.creator.name if initiative.creator else None,
+            'team_head_name': initiative.team_head.name if initiative.team_head else None,
+            'goal_title': initiative.goal.title if initiative.goal else None,
+            'assignee_count': len(initiative.assignments),
+            'submission_count': len(initiative.submissions) if hasattr(initiative, 'submissions') else 0,
+            'document_count': len(initiative.documents) if hasattr(initiative, 'documents') else 0,
+            'extension_count': len(initiative.extensions) if hasattr(initiative, 'extensions') else 0,
+        }
+
+        # Populate assignments with user data
+        assignments = []
+        for assignment in initiative.assignments:
+            if assignment.user:
+                assignments.append(InitiativeAssignee(
+                    user_id=assignment.user_id,
+                    user_name=assignment.user.name,
+                    user_email=assignment.user.email,
+                    assigned_at=assignment.created_at
+                ))
+
+        initiative_dict['assignments'] = assignments
+        initiative_data = InitiativeWithAssignees(**initiative_dict)
+        initiative_list.append(initiative_data)
+
+    return initiative_list
+
+@router.get("/assigned", response_model=InitiativeList)
+async def get_assigned_initiatives(
+    status_filter: Optional[List[InitiativeStatus]] = Query(None),
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    initiative_service: InitiativeWorkflowService = Depends(get_initiative_service)
+):
+    """
+    Get user's assigned initiatives
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get user's assigned initiatives
+    from models import InitiativeAssignment
+    user_initiative_ids = db.query(InitiativeAssignment.initiative_id).filter(InitiativeAssignment.user_id == user.id).all()
+    user_initiative_ids = [iid[0] for iid in user_initiative_ids]
+
+    query = db.query(Initiative).filter(Initiative.id.in_(user_initiative_ids))
+
+    if status_filter:
+        query = query.filter(Initiative.status.in_(status_filter))
+
+    initiatives = query.all()
+
+    return InitiativeList(
+        initiatives=[InitiativeSchema.from_orm(initiative) for initiative in initiatives],
+        total=len(initiatives),
+        page=1,
+        per_page=len(initiatives)
+    )
+
+@router.get("/created", response_model=InitiativeList)
+async def get_created_initiatives(
+    status_filter: Optional[List[InitiativeStatus]] = Query(None),
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get initiatives user created
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    query = db.query(Initiative).filter(Initiative.created_by == user.id)
+
+    if status_filter:
+        query = query.filter(Initiative.status.in_(status_filter))
+
+    initiatives = query.all()
+
+    return InitiativeList(
+        initiatives=[InitiativeSchema.from_orm(initiative) for initiative in initiatives],
+        total=len(initiatives),
+        page=1,
+        per_page=len(initiatives)
+    )
+
+@router.get("/review-queue", response_model=InitiativeList)
+async def get_review_queue(
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get initiatives pending review by current user
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get initiatives created by user that are pending review
+    initiatives = db.query(Initiative).filter(
+        Initiative.created_by == user.id,
+        Initiative.status == InitiativeStatus.UNDER_REVIEW
+    ).all()
+
+    return InitiativeList(
+        initiatives=[InitiativeSchema.from_orm(initiative) for initiative in initiatives],
+        total=len(initiatives),
+        page=1,
+        per_page=len(initiatives)
+    )
+
 @router.get("/{initiative_id}", response_model=InitiativeWithAssignees)
 async def get_initiative(
     initiative_id: uuid.UUID,
@@ -411,16 +763,9 @@ async def get_initiative(
     # Get assignees
     assignees = []
     for assignment in initiative.assignments:
-        # Compute full name from separate fields
-        name_parts = [assignment.user.first_name]
-        if assignment.user.middle_name:
-            name_parts.append(assignment.user.middle_name)
-        name_parts.append(assignment.user.last_name)
-        full_name = " ".join(name_parts)
-
         assignees.append({
             "user_id": str(assignment.user.id),
-            "user_name": full_name,
+            "user_name": assignment.user.name,  # Use display name field
             "user_email": assignment.user.email,
             "assigned_at": assignment.created_at
         })
@@ -795,133 +1140,6 @@ async def download_initiative_document(
         path=document.file_path,
         filename=document.file_name,
         media_type='application/octet-stream'
-    )
-
-@router.get("/supervisees", response_model=List[InitiativeSchema])
-async def get_supervisee_initiatives(
-    current_user: UserSession = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get all initiatives belonging to the current user's supervisees
-    Returns initiatives created by or assigned to supervisees
-    """
-    user = db.query(User).filter(User.id == current_user.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Get all supervisees
-    supervisees = db.query(User).filter(User.supervisor_id == user.id).all()
-    supervisee_ids = [s.id for s in supervisees]
-
-    if not supervisee_ids:
-        return []
-
-    # Get initiatives created by or assigned to supervisees
-    from models import InitiativeAssignment
-    from sqlalchemy.orm import joinedload
-
-    supervisee_initiative_ids_subquery = db.query(InitiativeAssignment.initiative_id).filter(
-        InitiativeAssignment.user_id.in_(supervisee_ids)
-    ).subquery()
-
-    initiatives = db.query(Initiative).options(
-        joinedload(Initiative.assignments).joinedload(InitiativeAssignment.user),
-        joinedload(Initiative.creator),
-        joinedload(Initiative.team_head)
-    ).filter(
-        or_(
-            Initiative.created_by.in_(supervisee_ids),  # Created by supervisees
-            Initiative.id.in_(supervisee_initiative_ids_subquery)  # Assigned to supervisees
-        )
-    ).order_by(Initiative.created_at.desc()).all()
-
-    return [InitiativeSchema.from_orm(initiative) for initiative in initiatives]
-
-
-@router.get("/assigned", response_model=InitiativeList)
-async def get_assigned_initiatives(
-    status_filter: Optional[List[InitiativeStatus]] = Query(None),
-    current_user: UserSession = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    initiative_service: InitiativeWorkflowService = Depends(get_initiative_service)
-):
-    """
-    Get user's assigned initiatives
-    """
-    user = db.query(User).filter(User.id == current_user.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Get user's assigned initiatives
-    from models import InitiativeAssignment
-    user_initiative_ids = db.query(InitiativeAssignment.initiative_id).filter(InitiativeAssignment.user_id == user.id).all()
-    user_initiative_ids = [iid[0] for iid in user_initiative_ids]
-
-    query = db.query(Initiative).filter(Initiative.id.in_(user_initiative_ids))
-
-    if status_filter:
-        query = query.filter(Initiative.status.in_(status_filter))
-
-    initiatives = query.all()
-
-    return InitiativeList(
-        initiatives=[InitiativeSchema.from_orm(initiative) for initiative in initiatives],
-        total=len(initiatives),
-        page=1,
-        per_page=len(initiatives)
-    )
-
-@router.get("/created", response_model=InitiativeList)
-async def get_created_initiatives(
-    status_filter: Optional[List[InitiativeStatus]] = Query(None),
-    current_user: UserSession = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get initiatives user created
-    """
-    user = db.query(User).filter(User.id == current_user.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    query = db.query(Initiative).filter(Initiative.created_by == user.id)
-
-    if status_filter:
-        query = query.filter(Initiative.status.in_(status_filter))
-
-    initiatives = query.all()
-
-    return InitiativeList(
-        initiatives=[InitiativeSchema.from_orm(initiative) for initiative in initiatives],
-        total=len(initiatives),
-        page=1,
-        per_page=len(initiatives)
-    )
-
-@router.get("/review-queue", response_model=InitiativeList)
-async def get_review_queue(
-    current_user: UserSession = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get initiatives pending review by current user
-    """
-    user = db.query(User).filter(User.id == current_user.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Get initiatives created by user that are pending review
-    initiatives = db.query(Initiative).filter(
-        Initiative.created_by == user.id,
-        Initiative.status == InitiativeStatus.PENDING_REVIEW
-    ).all()
-
-    return InitiativeList(
-        initiatives=[InitiativeSchema.from_orm(initiative) for initiative in initiatives],
-        total=len(initiatives),
-        page=1,
-        per_page=len(initiatives)
     )
 
 @router.get("/user/{user_id}")

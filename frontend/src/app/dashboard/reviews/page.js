@@ -47,7 +47,8 @@ function MyReviews() {
     if (selectedCycle) {
       fetchMyAssignments()
     }
-  }, [selectedCycle, fetchMyAssignments])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCycle])
 
   const fetchCycles = async () => {
     try {

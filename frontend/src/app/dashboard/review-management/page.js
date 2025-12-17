@@ -44,6 +44,7 @@ import { toast } from "sonner"
 
 const statusColors = {
   draft: "bg-gray-100 text-gray-800",
+  scheduled: "bg-purple-100 text-purple-800",
   active: "bg-blue-100 text-blue-800",
   completed: "bg-green-100 text-green-800",
   cancelled: "bg-red-100 text-red-800"
@@ -60,6 +61,19 @@ const reviewTypeColors = {
   self: "bg-blue-100 text-blue-800",
   peer: "bg-purple-100 text-purple-800",
   supervisor: "bg-orange-100 text-orange-800"
+}
+
+// Helper function to get status color (handles both uppercase and lowercase)
+const getStatusColor = (status) => {
+  return statusColors[status?.toLowerCase()] || "bg-gray-100 text-gray-800"
+}
+
+const getReviewStatusColor = (status) => {
+  return reviewStatusColors[status?.toLowerCase()] || "bg-gray-100 text-gray-800"
+}
+
+const getReviewTypeColor = (type) => {
+  return reviewTypeColors[type?.toLowerCase()] || "bg-blue-100 text-blue-800"
 }
 
 // Trait Management Components
@@ -553,7 +567,7 @@ function CycleDetailView({ cycle, onBack, onViewAllReviews }) {
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold">
-              <Badge className={statusColors[cycle.status]}>{cycle.status}</Badge>
+              <Badge className={getStatusColor(cycle.status)}>{cycle.status}</Badge>
             </div>
             <p className="text-sm text-gray-600">Status</p>
           </CardContent>
@@ -1035,7 +1049,7 @@ export default function ReviewManagementPage() {
   }
 
   const handleViewCycle = (cycle) => {
-    router.push(`/dashboard/reviews/${cycle.id}`)
+    router.push(`/dashboard/review-management/${cycle.id}`)
   }
 
   const handleBackToOverview = () => {

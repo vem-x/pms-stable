@@ -22,6 +22,7 @@ from schemas.users import (
 from schemas.auth import UserSession
 from utils.auth import get_current_user, get_password_hash, generate_onboarding_token
 from utils.permissions import UserPermissions, SystemPermissions
+from utils.email_service import EmailService
 
 router = APIRouter(tags=["users"])
 
@@ -557,6 +558,8 @@ async def update_user_status(
         required_permission = SystemPermissions.USER_SUSPEND
     elif status_data.status == UserStatus.ACTIVE:
         required_permission = SystemPermissions.USER_ACTIVATE
+    elif status_data.status == UserStatus.ON_LEAVE:
+        required_permission = SystemPermissions.USER_ON_LEAVE
     elif status_data.status == UserStatus.ARCHIVED:
         required_permission = SystemPermissions.USER_ARCHIVE
 

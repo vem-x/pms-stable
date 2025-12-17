@@ -112,15 +112,26 @@ class InitiativeWorkflowService:
     def validate_initiative_assignment(self, creator: User, assignee_ids: List[uuid.UUID]):
         """
         Validate that creator can assign initiatives to specified users
-        Based on organizational scope limitations
+
+        Assignment Scope Rules:
+        - Users with 'initiative_view_all' permission: Can assign to anyone in accessible organizations
+        - Regular users: Can assign to anyone in their department (same organization_id)
+        - Cannot assign to inactive users
         """
         for assignee_id in assignee_ids:
             assignee = self.db.query(User).filter(User.id == assignee_id).first()
             if not assignee:
                 raise ValueError(f"User {assignee_id} not found")
 
-            if not self.permission_service.user_can_access_organization(creator, assignee.organization_id):
-                raise ValueError(f"Cannot assign initiative to user outside your scope: {assignee.name}")
+            # Check if user has global assignment permission
+            if self.permission_service.user_has_permission(creator, "initiative_view_all"):
+                # Users with initiative_view_all can assign within their accessible organizations
+                if not self.permission_service.user_can_access_organization(creator, assignee.organization_id):
+                    raise ValueError(f"Cannot assign initiative to user outside your scope: {assignee.name}")
+            else:
+                # Regular users can only assign within their department (same organization)
+                if creator.organization_id != assignee.organization_id:
+                    raise ValueError(f"Cannot assign initiative to user outside your department: {assignee.name}")
 
             if assignee.status != UserStatus.ACTIVE:
                 raise ValueError(f"Cannot assign initiative to inactive user: {assignee.name}")
@@ -224,7 +235,7 @@ class InitiativeWorkflowService:
                 if not doc:
                     raise ValueError(f"Document {doc_id} not found or not associated with this initiative")
 
-        initiative.status = InitiativeStatus.PENDING_REVIEW
+        initiative.status = InitiativeStatus.UNDER_REVIEW
         self.db.commit()
 
         submitted_by = self.db.query(User).filter(User.id == user_id).first()
@@ -236,18 +247,27 @@ class InitiativeWorkflowService:
     def review_initiative(self, initiative_id: uuid.UUID, reviewer_id: uuid.UUID, score: int,
                           feedback: Optional[str] = None, approved: bool = True) -> bool:
         """
-        Review and score submitted initiative awaiting review
-        Only initiative creator can review
+        Review and score submitted initiative (UNDER_REVIEW status)
+
+        Workflow:
+        - If approved=True: Initiative → APPROVED (with score/grade)
+        - If approved=False: Initiative → ONGOING (redo requested with feedback)
+
+        Only initiative creator/supervisor can review
         """
         initiative = self.db.query(Initiative).filter(Initiative.id == initiative_id).first()
         if not initiative:
             return False
 
-        if initiative.status != InitiativeStatus.PENDING_REVIEW:
-            raise ValueError("Initiative must be submitted and pending review")
+        if initiative.status != InitiativeStatus.UNDER_REVIEW:
+            raise ValueError(f"Initiative must be UNDER_REVIEW to review (current status: {initiative.status})")
 
-        if initiative.created_by != reviewer_id:
-            raise ValueError("Only initiative creator can review submissions")
+        # Allow both creator and supervisor to review
+        creator = self.db.query(User).filter(User.id == initiative.created_by).first()
+        is_supervisor = creator and creator.supervisor_id == reviewer_id
+
+        if initiative.created_by != reviewer_id and not is_supervisor:
+            raise ValueError("Only initiative creator or supervisor can review submissions")
 
         if not (1 <= score <= 10):
             raise ValueError("Score must be between 1 and 10")
@@ -257,10 +277,12 @@ class InitiativeWorkflowService:
         initiative.reviewed_at = datetime.utcnow()
 
         if approved:
+            # Approve with final grade
             initiative.status = InitiativeStatus.APPROVED
             assignees = [assignment.user for assignment in initiative.assignments]
             self.notification_service.notify_initiative_approved(initiative, assignees, score)
         else:
+            # Request redo - send back to ONGOING status
             initiative.status = InitiativeStatus.ONGOING
             assignees = [assignment.user for assignment in initiative.assignments]
             self.notification_service.notify_initiative_redo_requested(initiative, assignees, feedback)
@@ -304,7 +326,8 @@ class InitiativeWorkflowService:
 
         # Apply approval/rejection
         if approved:
-            initiative.status = InitiativeStatus.ASSIGNED
+            # When supervisor approves a staff-created initiative, it goes to PENDING (ready to start)
+            initiative.status = InitiativeStatus.PENDING
             initiative.assigned_by = approver_id
             initiative.approved_at = datetime.utcnow()
             initiative.rejected_at = None
@@ -410,7 +433,7 @@ class InitiativeWorkflowService:
         """
         now = datetime.utcnow()
         active_initiatives = self.db.query(Initiative).filter(
-            Initiative.status.in_([InitiativeStatus.PENDING, InitiativeStatus.ONGOING, InitiativeStatus.PENDING_REVIEW])
+            Initiative.status.in_([InitiativeStatus.PENDING, InitiativeStatus.ONGOING, InitiativeStatus.UNDER_REVIEW])
         ).all()
 
         for initiative in active_initiatives:

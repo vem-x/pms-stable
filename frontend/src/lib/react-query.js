@@ -544,6 +544,23 @@ export function useSuperviseeInitiatives() {
   return useQuery({
     queryKey: ['initiatives', 'supervisees'],
     queryFn: initiatives.getSuperviseeInitiatives,
+    staleTime: 0, // Always fetch fresh data
+  })
+}
+
+export function useAssignableUsers() {
+  return useQuery({
+    queryKey: ['initiatives', 'assignable-users'],
+    queryFn: initiatives.getAssignableUsers,
+    staleTime: 1000 * 60 * 2, // Cache for 2 minutes
+  })
+}
+
+export function useHasSupervisees() {
+  return useQuery({
+    queryKey: ['initiatives', 'has-supervisees'],
+    queryFn: initiatives.hasSupervisees,
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
   })
 }
 
@@ -603,7 +620,48 @@ export function useApproveInitiative() {
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVES })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVE(variables.id) })
+      queryClient.invalidateQueries({ queryKey: ['initiatives', 'supervisees'] })
       toast.success('Initiative approval processed successfully')
+    },
+  })
+}
+
+export function useAcceptInitiative() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id) => initiatives.accept(id),
+    onSuccess: (data, id) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVES })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVE(id) })
+      toast.success('Initiative accepted successfully')
+    },
+  })
+}
+
+export function useStartInitiative() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id) => initiatives.start(id),
+    onSuccess: (data, id) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVES })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVE(id) })
+      toast.success('Initiative started successfully')
+    },
+  })
+}
+
+export function useCompleteInitiative() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id) => initiatives.complete(id),
+    onSuccess: (data, id) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVES })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVE(id) })
+      queryClient.invalidateQueries({ queryKey: ['initiatives', 'supervisees'] })
+      toast.success('Initiative completed and sent for review')
     },
   })
 }

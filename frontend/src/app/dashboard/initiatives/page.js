@@ -61,11 +61,17 @@ import { useAuth, PermissionGuard } from "@/lib/auth-context"
 import {
   useInitiatives,
   useSuperviseeInitiatives,
+  useAssignableUsers,
+  useHasSupervisees,
   useCreateInitiative,
+  useUpdateInitiative,
   useUpdateInitiativeStatus,
   useSubmitInitiative,
   useReviewInitiative,
   useApproveInitiative,
+  useAcceptInitiative,
+  useStartInitiative,
+  useCompleteInitiative,
   useGoals,
   useRequestInitiativeExtension,
   useDeleteInitiative,
@@ -73,20 +79,22 @@ import {
 } from "@/lib/react-query"
 
 const statusColors = {
-  PENDING_APPROVAL: "bg-yellow-100 text-yellow-800",
-  ASSIGNED: "bg-blue-100 text-blue-800",
-  REJECTED: "bg-red-100 text-red-800",
-  STARTED: "bg-indigo-100 text-indigo-800",
-  COMPLETED: "bg-purple-100 text-purple-800",
-  APPROVED: "bg-green-100 text-green-800",
-  OVERDUE: "bg-red-100 text-red-800",
+  PENDING_APPROVAL: "bg-yellow-100 text-yellow-800",      // Waiting supervisor approval
+  ASSIGNED: "bg-blue-100 text-blue-800",                  // Need to accept
+  PENDING: "bg-cyan-100 text-cyan-800",                   // Ready to start
+  ONGOING: "bg-green-100 text-green-800",                 // Actively working
+  UNDER_REVIEW: "bg-orange-100 text-orange-800",          // Submitted for review
+  APPROVED: "bg-emerald-100 text-emerald-800",            // Approved with grade
+  REJECTED: "bg-red-100 text-red-800",                    // Rejected
+  OVERDUE: "bg-red-100 text-red-800",                     // Past due date
   // Legacy status support for backward compatibility
   pending_approval: "bg-yellow-100 text-yellow-800",
   assigned: "bg-blue-100 text-blue-800",
+  pending: "bg-cyan-100 text-cyan-800",
+  ongoing: "bg-green-100 text-green-800",
+  under_review: "bg-orange-100 text-orange-800",
+  approved: "bg-emerald-100 text-emerald-800",
   rejected: "bg-red-100 text-red-800",
-  started: "bg-indigo-100 text-indigo-800",
-  completed: "bg-purple-100 text-purple-800",
-  approved: "bg-green-100 text-green-800",
   overdue: "bg-red-100 text-red-800"
 }
 
@@ -113,37 +121,63 @@ const urgencyColors = {
 function InitiativeForm({ initiative, isOpen, onClose, onSubmit }) {
   const { user } = useAuth()
   const [formData, setFormData] = useState({
-    title: initiative?.title || "",
-    description: initiative?.description || "",
-    type: initiative?.type || "INDIVIDUAL",
-    urgency: initiative?.urgency || "MEDIUM",
-    due_date: initiative?.due_date ? initiative.due_date.split('T')[0] : "",
-    assignee_ids: initiative?.assignee_ids || [],
-    team_head_id: initiative?.team_head_id || "",
-    goal_id: initiative?.goal_id || "none"
+    title: "",
+    description: "",
+    type: "INDIVIDUAL",
+    urgency: "MEDIUM",
+    due_date: "",
+    assignee_ids: [],
+    team_head_id: "",
+    goal_id: "none"
   })
   const [createForMyself, setCreateForMyself] = useState(true) // Checkbox state
   const [attachedFiles, setAttachedFiles] = useState([])
   const [goalOpen, setGoalOpen] = useState(false)
   const [assigneeOpen, setAssigneeOpen] = useState(false)
 
-  const { data: users = [] } = useUsers()
+  const { data: assignableUsers = [] } = useAssignableUsers()
   const { data: goals = [] } = useGoals()
 
-  // Get supervisees
-  const supervisees = useMemo(() => {
-    if (!user?.user_id || !users || users.length === 0) return []
-    return users.filter(u => u.supervisor_id === user.user_id && u.status === 'active')
-  }, [users, user?.user_id])
+  // Update form data when initiative changes (for editing)
+  useEffect(() => {
+    if (initiative && isOpen) {
+      // Editing mode - prefill with initiative data
+      const assigneeIds = initiative.assignments?.map(a => a.user_id) || []
+      const isForMyself = assigneeIds.length === 1 && assigneeIds[0] === user?.user_id
 
-  // Reset form when opening/closing
+      setFormData({
+        title: initiative.title || "",
+        description: initiative.description || "",
+        type: initiative.type || "INDIVIDUAL",
+        urgency: initiative.urgency || "MEDIUM",
+        due_date: initiative.due_date ? initiative.due_date.split('T')[0] : "",
+        assignee_ids: assigneeIds,
+        team_head_id: initiative.team_head_id || "",
+        goal_id: initiative.goal_id || "none"
+      })
+      setCreateForMyself(isForMyself)
+      setAttachedFiles([])
+    } else if (!initiative && isOpen) {
+      // Create mode - reset to defaults
+      setFormData({
+        title: "",
+        description: "",
+        type: "INDIVIDUAL",
+        urgency: "MEDIUM",
+        due_date: "",
+        assignee_ids: [],
+        team_head_id: "",
+        goal_id: "none"
+      })
+      setCreateForMyself(true)
+      setAttachedFiles([])
+    }
+  }, [initiative, isOpen, user?.user_id])
+
+  // Reset form when closing
   useEffect(() => {
     if (!isOpen) {
       setAttachedFiles([])
-      setCreateForMyself(true)
-    } else {
-      // When opening, reset to default state
-      setCreateForMyself(true)
     }
   }, [isOpen])
 
@@ -217,12 +251,16 @@ function InitiativeForm({ initiative, isOpen, onClose, onSubmit }) {
 
     console.log('Submitting initiative:', submitData)
 
-    onSubmit(submitData)
+    // Pass initiative ID if editing
+    if (initiative) {
+      onSubmit({ ...submitData, id: initiative.id })
+    } else {
+      onSubmit(submitData)
+    }
     onClose()
   }
 
-  const usersArray = Array.isArray(users) ? users : []
-  const availableUsers = usersArray.filter(u => u.status === 'active')
+  const availableUsers = Array.isArray(assignableUsers) ? assignableUsers : []
   const activeGoals = Array.isArray(goals) ? goals.filter(g => g.status === 'active') : []
 
   // Get selected goal
@@ -766,56 +804,104 @@ function InitiativeSubmissionDialog({ initiative, isOpen, onClose, onSubmit }) {
 function InitiativeReviewDialog({ initiative, isOpen, onClose, onSubmit }) {
   const [formData, setFormData] = useState({
     score: 7,
-    feedback: ""
+    feedback: "",
+    approved: true
   })
 
   const handleSubmit = (e) => {
     e.preventDefault()
+
+    // Validate feedback is required for redo
+    if (!formData.approved && (!formData.feedback || formData.feedback.trim() === '')) {
+      alert('Feedback is required when requesting redo')
+      return
+    }
+
     onSubmit(formData)
     onClose()
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[600px]">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Review Initiative</DialogTitle>
+            <DialogTitle>Review & Grade Initiative</DialogTitle>
             <DialogDescription>
-              Review and score the completed initiative &ldquo;{initiative?.title}&rdquo;
+              Review the completed work for &ldquo;{initiative?.title}&rdquo; and decide whether to approve or request changes
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
+            {/* Decision Buttons */}
             <div className="grid gap-2">
-              <Label htmlFor="score">Score (1-10)</Label>
-              <Select
-                value={formData.score.toString()}
-                onValueChange={(value) => setFormData({ ...formData, score: parseInt(value) })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select score" />
-                </SelectTrigger>
-                <SelectContent>
-                  {[...Array(10)].map((_, i) => (
-                    <SelectItem key={i + 1} value={(i + 1).toString()}>
-                      {i + 1} - {i < 3 ? 'Poor' : i < 6 ? 'Fair' : i < 8 ? 'Good' : 'Excellent'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Decision</Label>
+              <div className="flex gap-4">
+                <Button
+                  type="button"
+                  variant={formData.approved ? "default" : "outline"}
+                  onClick={() => setFormData({ ...formData, approved: true })}
+                  className="flex-1"
+                >
+                  <Check className="mr-2 h-4 w-4" />
+                  Approve & Grade
+                </Button>
+                <Button
+                  type="button"
+                  variant={!formData.approved ? "destructive" : "outline"}
+                  onClick={() => setFormData({ ...formData, approved: false })}
+                  className="flex-1"
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  Request Redo
+                </Button>
+              </div>
             </div>
 
+            {/* Score (only for approval) */}
+            {formData.approved && (
+              <div className="grid gap-2">
+                <Label htmlFor="score">Grade (1-10)</Label>
+                <Select
+                  value={formData.score.toString()}
+                  onValueChange={(value) => setFormData({ ...formData, score: parseInt(value) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select grade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[...Array(10)].map((_, i) => (
+                      <SelectItem key={i + 1} value={(i + 1).toString()}>
+                        {i + 1} - {i < 3 ? 'Poor' : i < 6 ? 'Fair' : i < 8 ? 'Good' : 'Excellent'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Rate the quality and completion of the work</p>
+              </div>
+            )}
+
+            {/* Feedback */}
             <div className="grid gap-2">
-              <Label htmlFor="feedback">Feedback</Label>
+              <Label htmlFor="feedback">
+                {formData.approved ? 'Feedback (Optional)' : 'Redo Instructions *'}
+              </Label>
               <Textarea
                 id="feedback"
                 value={formData.feedback}
                 onChange={(e) => setFormData({ ...formData, feedback: e.target.value })}
-                placeholder="Provide feedback on the initiative completion"
+                placeholder={formData.approved
+                  ? "Provide feedback on the initiative completion"
+                  : "Explain what needs to be redone and why"
+                }
                 rows={5}
-                required
+                required={!formData.approved}
               />
+              {!formData.approved && (
+                <p className="text-xs text-muted-foreground text-red-600">
+                  Be specific about what needs to be changed
+                </p>
+              )}
             </div>
           </div>
 
@@ -823,8 +909,11 @@ function InitiativeReviewDialog({ initiative, isOpen, onClose, onSubmit }) {
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit">
-              Submit Review
+            <Button
+              type="submit"
+              variant={formData.approved ? "default" : "destructive"}
+            >
+              {formData.approved ? 'Approve & Submit Grade' : 'Request Redo'}
             </Button>
           </DialogFooter>
         </form>
@@ -925,7 +1014,7 @@ function InitiativeDetailModal({ initiative, isOpen, onClose, onEdit, onDelete, 
         return
       }
 
-      if (initiative.status === 'pending_review' && canUserReview(initiative)) {
+      if ((initiative.status === 'UNDER_REVIEW' || initiative.status === 'under_review') && canUserReview(initiative)) {
         setLoadingSubmission(true)
         try {
           const response = await fetch(`http://localhost:8000/api/initiatives/${initiative.id}/submission`, {
@@ -1098,8 +1187,8 @@ function InitiativeDetailModal({ initiative, isOpen, onClose, onEdit, onDelete, 
               </div>
             )}
 
-            {/* Submission Details (for creator when initiative is pending_review) */}
-            {initiative.status === 'pending_review' && canUserReview(initiative) && (
+            {/* Submission Details (for creator when initiative is UNDER_REVIEW) */}
+            {(initiative.status === 'UNDER_REVIEW' || initiative.status === 'under_review') && canUserReview(initiative) && (
               <div className="border-2 border-purple-200 rounded-lg p-4 bg-purple-50">
                 <h3 className="font-semibold mb-3 text-purple-900">Initiative Submission</h3>
 
@@ -1190,18 +1279,29 @@ function InitiativeDetailModal({ initiative, isOpen, onClose, onEdit, onDelete, 
             </Button>
           )}
 
-          {/* Assignee starts work after ASSIGNED */}
+          {/* Assignee accepts ASSIGNED initiative */}
           {(initiative.status === 'ASSIGNED' || initiative.status === 'assigned') && canUserSubmit(initiative) && (
             <Button onClick={() => {
-              onUpdateStatus(initiative, 'STARTED')
+              onUpdateStatus(initiative, 'ACCEPT')
+              onClose()
+            }}>
+              <Check className="mr-2 h-4 w-4" />
+              Accept Initiative
+            </Button>
+          )}
+
+          {/* Assignee starts PENDING initiative */}
+          {(initiative.status === 'PENDING' || initiative.status === 'pending') && canUserSubmit(initiative) && (
+            <Button onClick={() => {
+              onUpdateStatus(initiative, 'START')
               onClose()
             }}>
               Start Initiative
             </Button>
           )}
 
-          {/* Assignee submits after STARTED */}
-          {(initiative.status === 'STARTED' || initiative.status === 'started') && canUserSubmit(initiative) && (
+          {/* Assignee submits ONGOING initiative */}
+          {(initiative.status === 'ONGOING' || initiative.status === 'ongoing') && canUserSubmit(initiative) && (
             <Button onClick={() => {
               onSubmit(initiative)
               onClose()
@@ -1211,8 +1311,8 @@ function InitiativeDetailModal({ initiative, isOpen, onClose, onEdit, onDelete, 
             </Button>
           )}
 
-          {/* Supervisor/Assigner reviews after COMPLETED */}
-          {(initiative.status === 'COMPLETED' || initiative.status === 'completed') && canUserReview(initiative) && (
+          {/* Supervisor/Assigner reviews UNDER_REVIEW initiative */}
+          {(initiative.status === 'UNDER_REVIEW' || initiative.status === 'under_review') && canUserReview(initiative) && (
             <Button onClick={() => {
               onReview(initiative)
               onClose()
@@ -1222,7 +1322,8 @@ function InitiativeDetailModal({ initiative, isOpen, onClose, onEdit, onDelete, 
             </Button>
           )}
 
-          {canUserReview(initiative) && (
+          {/* Edit and Delete buttons - only for PENDING_APPROVAL or ASSIGNED status */}
+          {canUserReview(initiative) && (initiative.status === 'PENDING_APPROVAL' || initiative.status === 'pending_approval' || initiative.status === 'ASSIGNED' || initiative.status === 'assigned') && (
             <>
               <Button variant="outline" onClick={() => {
                 onEdit(initiative)
@@ -1268,13 +1369,16 @@ export default function InitiativesPage() {
 
   const { data: users = [], isLoading: isLoadingUsers } = useUsers()
 
+  // Check if user has supervisees
+  const { data: superviseeCheck } = useHasSupervisees()
+  const hasSupervisees = superviseeCheck?.has_supervisees || false
+  const superviseeCount = superviseeCheck?.supervisee_count || 0
+
   // Get supervisees for supervisor view
   const supervisees = useMemo(() => {
     if (!user?.user_id || !users || users.length === 0) return []
     return users.filter(u => u.supervisor_id === user.user_id)
   }, [users, user?.user_id])
-
-  const isSupervisor = supervisees.length > 0
 
   // Build params with filters
   const buildParams = (isMyTasks) => {
@@ -1306,19 +1410,19 @@ export default function InitiativesPage() {
   const { data: allInitiativesData, isLoading: allInitiativesLoading } = useInitiatives(allInitiativesParams)
   const { data: superviseeInitiativesData = [], isLoading: superviseeInitiativesLoading, refetch: refetchSuperviseeInitiatives } = useSuperviseeInitiatives()
 
-  // Refetch supervisee initiatives when switching to team tab
+  // Refetch supervisee initiatives when switching to supervisee tab
   useEffect(() => {
-    if (activeTab === "team-initiatives") {
+    if (activeTab === "supervisee-initiatives") {
       refetchSuperviseeInitiatives()
     }
   }, [activeTab, refetchSuperviseeInitiatives])
 
   // Use data based on active tab
   const isLoading = activeTab === 'my-initiatives' ? myInitiativesLoading :
-                     activeTab === 'team-initiatives' ? superviseeInitiativesLoading :
+                     activeTab === 'supervisee-initiatives' ? superviseeInitiativesLoading :
                      allInitiativesLoading
   const initiativeData = activeTab === 'my-initiatives' ? myInitiativesData :
-                         activeTab === 'team-initiatives' ? { initiatives: superviseeInitiativesData, total: superviseeInitiativesData.length } :
+                         activeTab === 'supervisee-initiatives' ? { initiatives: superviseeInitiativesData, total: superviseeInitiativesData.length } :
                          allInitiativesData
   const initiatives = initiativeData?.initiatives || []
   const totalInitiatives = initiativeData?.total || 0
@@ -1330,19 +1434,38 @@ export default function InitiativesPage() {
   }, [activeTab, statusFilter, urgencyFilter, typeFilter])
 
   const createMutation = useCreateInitiative()
+  const updateMutation = useUpdateInitiative()
   const updateStatusMutation = useUpdateInitiativeStatus()
   const submitMutation = useSubmitInitiative()
   const reviewMutation = useReviewInitiative()
   const approvalMutation = useApproveInitiative()
+  const acceptMutation = useAcceptInitiative()
+  const startMutation = useStartInitiative()
+  const completeMutation = useCompleteInitiative()
   const deleteMutation = useDeleteInitiative()
   console.log(initiatives)
 
   const handleCreate = (data) => {
-    createMutation.mutate(data)
+    if (data.id) {
+      // Editing existing initiative
+      updateMutation.mutate(data)
+    } else {
+      // Creating new initiative
+      createMutation.mutate(data)
+    }
   }
 
   const handleUpdateStatus = (initiative, status) => {
-    updateStatusMutation.mutate({ id: initiative.id, status })
+    // Route to specific mutations based on status action
+    if (status === 'ACCEPT') {
+      acceptMutation.mutate(initiative.id)
+    } else if (status === 'START') {
+      startMutation.mutate(initiative.id)
+    } else if (status === 'COMPLETE') {
+      completeMutation.mutate(initiative.id)
+    } else {
+      updateStatusMutation.mutate({ id: initiative.id, status })
+    }
   }
 
   const handleSubmit = (data) => {
@@ -1361,6 +1484,18 @@ export default function InitiativesPage() {
     if (approvingInitiative) {
       approvalMutation.mutate({ id: approvingInitiative.id, ...data })
     }
+  }
+
+  const handleAccept = (initiativeId) => {
+    acceptMutation.mutate(initiativeId)
+  }
+
+  const handleStart = (initiativeId) => {
+    startMutation.mutate(initiativeId)
+  }
+
+  const handleComplete = (initiativeId) => {
+    completeMutation.mutate(initiativeId)
   }
 
   const handleEdit = (initiative) => {
@@ -1405,19 +1540,25 @@ export default function InitiativesPage() {
   const allInitiatives = filterBySearch(allInitiativesRaw)
 
   const canUserSubmit = (initiative) => {
-    const isAssigned = initiative.assignments?.some(assignment => assignment.user_id === user?.id)
-    const isTeamHead = initiative.team_head_id === user?.id
+    const isAssigned = initiative.assignments?.some(assignment => assignment.user_id === user?.user_id)
+    const isTeamHead = initiative.team_head_id === user?.user_id
     return isAssigned || isTeamHead
   }
 
   const canUserReview = (initiative) => {
-    return initiative.created_by === user?.id
+    return initiative.created_by === user?.user_id
   }
 
   const canUserApprove = (initiative) => {
-    // Supervisor or person who can approve initiatives
-    // For now, check if user is the supervisor (can be expanded with permissions later)
-    return initiative.created_by === user?.id || user?.permissions?.includes('initiative_approve')
+    // Check if user is the supervisor of the initiative creator
+    // Find the creator in the users list to check their supervisor_id
+    const creator = users.find(u => u.id === initiative.created_by)
+    const isSupervisor = creator && creator.supervisor_id === user?.user_id
+
+    // Also allow if user has special permission
+    const hasPermission = user?.permissions?.includes('initiative_approve')
+
+    return isSupervisor || hasPermission
   }
 
 
@@ -1540,12 +1681,24 @@ export default function InitiativesPage() {
                         <Eye className="mr-2 h-4 w-4" />
                         View Details
                       </DropdownMenuItem>
-                      {initiative.status === 'pending' && canUserSubmit(initiative) && (
-                        <DropdownMenuItem onClick={() => handleUpdateStatus(initiative, 'ongoing')}>
+
+                      {/* Accept ASSIGNED initiative */}
+                      {(initiative.status === 'ASSIGNED' || initiative.status === 'assigned') && canUserSubmit(initiative) && (
+                        <DropdownMenuItem onClick={() => handleUpdateStatus(initiative, 'ACCEPT')}>
+                          <Check className="mr-2 h-4 w-4" />
+                          Accept Initiative
+                        </DropdownMenuItem>
+                      )}
+
+                      {/* Start PENDING initiative */}
+                      {(initiative.status === 'PENDING' || initiative.status === 'pending') && canUserSubmit(initiative) && (
+                        <DropdownMenuItem onClick={() => handleUpdateStatus(initiative, 'START')}>
                           Start Initiative
                         </DropdownMenuItem>
                       )}
-                      {initiative.status === 'ongoing' && canUserSubmit(initiative) && (
+
+                      {/* Submit ONGOING initiative */}
+                      {(initiative.status === 'ONGOING' || initiative.status === 'ongoing') && canUserSubmit(initiative) && (
                         <DropdownMenuItem onClick={() => {
                           setSubmittingInitiative(initiative)
                           setIsSubmissionOpen(true)
@@ -1554,7 +1707,9 @@ export default function InitiativesPage() {
                           Submit Initiative
                         </DropdownMenuItem>
                       )}
-                      {initiative.status === 'pending_review' && canUserReview(initiative) && (
+
+                      {/* Review UNDER_REVIEW initiative */}
+                      {(initiative.status === 'UNDER_REVIEW' || initiative.status === 'under_review') && canUserReview(initiative) && (
                         <DropdownMenuItem onClick={() => {
                           setReviewingInitiative(initiative)
                           setIsReviewOpen(true)
@@ -1563,13 +1718,17 @@ export default function InitiativesPage() {
                           Review Initiative
                         </DropdownMenuItem>
                       )}
-                      {canUserReview(initiative) && (
+
+                      {/* Edit - only for PENDING_APPROVAL or ASSIGNED */}
+                      {canUserReview(initiative) && (initiative.status === 'PENDING_APPROVAL' || initiative.status === 'pending_approval' || initiative.status === 'ASSIGNED' || initiative.status === 'assigned') && (
                         <DropdownMenuItem onClick={() => handleEdit(initiative)}>
                           <Edit className="mr-2 h-4 w-4" />
                           Edit
                         </DropdownMenuItem>
                       )}
-                      {canUserReview(initiative) && (
+
+                      {/* Delete - only for PENDING_APPROVAL or ASSIGNED */}
+                      {canUserReview(initiative) && (initiative.status === 'PENDING_APPROVAL' || initiative.status === 'pending_approval' || initiative.status === 'ASSIGNED' || initiative.status === 'assigned') && (
                         <DropdownMenuItem
                           onClick={() => handleDelete(initiative)}
                           className="text-red-600"
@@ -1648,10 +1807,11 @@ export default function InitiativesPage() {
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="PENDING_APPROVAL">Pending Approval</SelectItem>
                   <SelectItem value="ASSIGNED">Assigned</SelectItem>
-                  <SelectItem value="REJECTED">Rejected</SelectItem>
-                  <SelectItem value="STARTED">Started</SelectItem>
-                  <SelectItem value="COMPLETED">Completed</SelectItem>
+                  <SelectItem value="PENDING">Pending</SelectItem>
+                  <SelectItem value="ONGOING">Ongoing</SelectItem>
+                  <SelectItem value="UNDER_REVIEW">Under Review</SelectItem>
                   <SelectItem value="APPROVED">Approved</SelectItem>
+                  <SelectItem value="REJECTED">Rejected</SelectItem>
                   <SelectItem value="OVERDUE">Overdue</SelectItem>
                 </SelectContent>
               </Select>
@@ -1768,17 +1928,15 @@ export default function InitiativesPage() {
 
       {/* Initiative Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className={`grid w-full ${isSupervisor ? 'max-w-2xl grid-cols-3' : 'max-w-md grid-cols-2'}`}>
+        <TabsList className="grid w-full max-w-2xl grid-cols-3">
           <TabsTrigger value="my-initiatives">
             <User className="h-4 w-4 mr-2" />
             My Initiatives ({myInitiativesData?.total || 0})
           </TabsTrigger>
-          {isSupervisor && (
-            <TabsTrigger value="team-initiatives">
-              <Users className="h-4 w-4 mr-2" />
-              Team Initiatives ({superviseeInitiativesData?.length || 0})
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="supervisee-initiatives">
+            <Users className="h-4 w-4 mr-2" />
+            Supervisee Initiatives ({superviseeInitiativesData?.length || 0})
+          </TabsTrigger>
           <PermissionGuard permission="initiative_view_all">
             <TabsTrigger value="all-initiatives">
               <CheckSquare className="h-4 w-4 mr-2" />
@@ -1849,25 +2007,28 @@ export default function InitiativesPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="team-initiatives" className="space-y-4">
-          {isSupervisor ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Team Initiatives</CardTitle>
-                <CardDescription>Initiatives created by or assigned to your team members</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {isLoading ? (
-                  <div className="space-y-3">
-                    {[...Array(5)].map((_, i) => (
-                      <Skeleton key={i} className="h-16 w-full" />
-                    ))}
-                  </div>
-                ) : initiatives.length > 0 ? (
+        <TabsContent value="supervisee-initiatives" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Supervisee Initiatives</CardTitle>
+              <CardDescription>
+                {hasSupervisees
+                  ? `Initiatives created by or assigned to your ${superviseeCount} direct report${superviseeCount > 1 ? 's' : ''}`
+                  : "You don't have any direct reports yet"
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-3">
+                  {[...Array(5)].map((_, i) => (
+                    <Skeleton key={i} className="h-16 w-full" />
+                  ))}
+                </div>
+              ) : hasSupervisees && initiatives.length > 0 ? (
                   <div className="space-y-4">
                     {initiatives.map((initiative) => {
                       const isPendingApproval = initiative.status === 'PENDING_APPROVAL'
-                      const createdBySupervisee = supervisees.some(s => s.id === initiative.created_by)
 
                       return (
                         <div key={initiative.id} className={cn(
@@ -1880,12 +2041,6 @@ export default function InitiativesPage() {
                                 <h3 className="font-semibold">{initiative.title}</h3>
                                 <Badge className={statusColors[initiative.status] || statusColors.ASSIGNED}>
                                   {initiative.status?.replace('_', ' ') || 'Unknown'}
-                                </Badge>
-                                <Badge className={typeColors[initiative.type] || typeColors.INDIVIDUAL}>
-                                  {initiative.type}
-                                </Badge>
-                                <Badge variant="outline" className={urgencyColors[initiative.urgency?.toLowerCase()] || urgencyColors.medium}>
-                                  {initiative.urgency}
                                 </Badge>
                               </div>
                               <p className="text-sm text-muted-foreground mb-2">{initiative.description}</p>
@@ -1905,7 +2060,7 @@ export default function InitiativesPage() {
                               </div>
                             </div>
                             <div className="flex gap-2">
-                              {isPendingApproval && createdBySupervisee && (
+                              {isPendingApproval && (
                                 <Button
                                   size="sm"
                                   variant="default"
@@ -1915,7 +2070,8 @@ export default function InitiativesPage() {
                                   }}
                                   className="bg-green-600 hover:bg-green-700"
                                 >
-                                  Review & Approve
+                                  <Check className="h-4 w-4 mr-1" />
+                                  Approve
                                 </Button>
                               )}
                               <Button
@@ -1938,23 +2094,19 @@ export default function InitiativesPage() {
                 ) : (
                   <div className="text-center py-12">
                     <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-medium mb-2">No team initiatives</h3>
-                    <p className="text-muted-foreground">Your team members haven't created any initiatives yet.</p>
+                    <h3 className="text-lg font-medium mb-2">
+                      {hasSupervisees ? "No supervisee initiatives" : "No direct reports"}
+                    </h3>
+                    <p className="text-muted-foreground">
+                      {hasSupervisees
+                        ? "Your direct reports haven't been assigned any initiatives yet."
+                        : "You don't have any team members reporting to you."
+                      }
+                    </p>
                   </div>
                 )}
               </CardContent>
             </Card>
-          ) : (
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-center py-12">
-                  <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium mb-2">Not a supervisor</h3>
-                  <p className="text-muted-foreground">You don't have any team members reporting to you.</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </TabsContent>
 
         <TabsContent value="all-initiatives" className="space-y-4">

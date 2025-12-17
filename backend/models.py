@@ -22,11 +22,11 @@ class ScopeOverride(str, enum.Enum):
 
 # User Status Enums
 class UserStatus(str, enum.Enum):
-    PENDING_ACTIVATION = "pending_activation"
-    ACTIVE = "active"
-    SUSPENDED = "suspended"
-    ON_LEAVE = "on_leave"
-    ARCHIVED = "archived"
+    PENDING_ACTIVATION = "PENDING_ACTIVATION"
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+    ON_LEAVE = "ON_LEAVE"
+    ARCHIVED = "ARCHIVED"
 
 # Goal Enums
 class GoalType(str, enum.Enum):
@@ -53,12 +53,13 @@ class InitiativeType(str, enum.Enum):
     GROUP = "GROUP"
 
 class InitiativeStatus(str, enum.Enum):
-    PENDING_APPROVAL = "PENDING_APPROVAL"  # Staff created, waiting for supervisor approval
-    ASSIGNED = "ASSIGNED"  # Supervisor approved and assigned
-    REJECTED = "REJECTED"  # Supervisor rejected
-    STARTED = "STARTED"  # Assignee started working
-    COMPLETED = "COMPLETED"  # Assignee completed work
-    APPROVED = "APPROVED"  # Supervisor reviewed and approved with score
+    PENDING_APPROVAL = "PENDING_APPROVAL"  # Created by staff, waiting for supervisor approval
+    ASSIGNED = "ASSIGNED"  # Supervisor created and assigned to me, waiting for acceptance
+    PENDING = "PENDING"  # Accepted or approved, ready to start work
+    ONGOING = "ONGOING"  # Actively working on the initiative
+    UNDER_REVIEW = "UNDER_REVIEW"  # Submitted for supervisor review
+    APPROVED = "APPROVED"  # Supervisor reviewed and approved with grade
+    REJECTED = "REJECTED"  # Supervisor rejected during approval
     OVERDUE = "OVERDUE"  # Past due date
 
 class InitiativeUrgency(str, enum.Enum):
@@ -74,10 +75,11 @@ class ExtensionStatus(str, enum.Enum):
 
 # Review System Enums
 class ReviewCycleStatus(str, enum.Enum):
-    DRAFT = "draft"
-    ACTIVE = "active"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
+    DRAFT = "DRAFT"
+    SCHEDULED = "SCHEDULED"
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
 
 class ReviewStatus(str, enum.Enum):
     NOT_STARTED = "not_started"

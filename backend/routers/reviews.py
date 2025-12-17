@@ -1118,8 +1118,7 @@ async def get_review_assignment(
 
     responses_list = [{
         "question_id": str(r.question_id),
-        "rating": r.rating,
-        "comments": r.comments
+        "rating": r.rating
     } for r in responses]
 
     return {
@@ -3587,7 +3586,7 @@ async def add_question_to_cycle(
     if not cycle:
         raise HTTPException(status_code=404, detail="Review cycle not found")
 
-    if cycle.status != "draft":
+    if cycle.status != "DRAFT":
         raise HTTPException(status_code=400, detail="Can only modify questions in draft cycles")
 
     # Create the question (with or without trait)
@@ -3621,7 +3620,7 @@ async def remove_question_from_cycle(
     if not cycle:
         raise HTTPException(status_code=404, detail="Review cycle not found")
 
-    if cycle.status != "draft":
+    if cycle.status != "DRAFT":
         raise HTTPException(status_code=400, detail="Can only modify questions in draft cycles")
 
     question = db.query(ReviewQuestion).filter(ReviewQuestion.id == question_id).first()
@@ -3640,7 +3639,10 @@ async def activate_review_cycle(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Activate a review cycle from draft status and generate assignments"""
+    """
+    Schedule a review cycle from draft status and generate assignments.
+    The cycle will become active on the start_date and close on the end_date.
+    """
     if "review_create_cycle" not in current_user.permissions:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -3654,7 +3656,7 @@ async def activate_review_cycle(
             detail="Review cycle not found"
         )
 
-    if cycle.status != "draft":
+    if cycle.status != "DRAFT":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Review cycle is not in draft status"
@@ -3663,8 +3665,9 @@ async def activate_review_cycle(
     # Generate all review assignments
     _generate_review_assignments(cycle_id, db)
 
-    # Update cycle status to active
-    cycle.status = "active"
+    # Update cycle status to scheduled
+    # The cycle will automatically become active on the start_date
+    cycle.status = "SCHEDULED"
 
     # Update participant count
     participant_count = db.query(func.count(func.distinct(ReviewAssignment.reviewee_id))).filter(
@@ -3676,9 +3679,11 @@ async def activate_review_cycle(
     db.refresh(cycle)
 
     return {
-        "message": "Review cycle activated successfully",
+        "message": f"Review cycle scheduled successfully. It will become active on {cycle.start_date.strftime('%Y-%m-%d')} and close on {cycle.end_date.strftime('%Y-%m-%d')}",
         "cycle_id": cycle_id,
         "status": cycle.status,
+        "start_date": cycle.start_date.isoformat(),
+        "end_date": cycle.end_date.isoformat(),
         "participants_count": cycle.participants_count,
         "assignments_generated": True
     }
@@ -3689,8 +3694,12 @@ def _generate_review_assignments(cycle_id: str, db: Session):
     if not cycle:
         return
 
+    # Delete any existing assignments for this cycle (to handle re-activation scenarios)
+    db.query(ReviewAssignment).filter(ReviewAssignment.cycle_id == cycle_id).delete()
+    db.flush()  # Ensure deletions are processed before creating new assignments
+
     # Get all active users
-    active_users = db.query(User).filter(User.status == 'active').all()
+    active_users = db.query(User).filter(User.status == 'ACTIVE').all()
 
     for user in active_users:
         # Create self-review assignment
@@ -3707,7 +3716,7 @@ def _generate_review_assignments(cycle_id: str, db: Session):
         if user.supervisor_id:
             supervisor = db.query(User).filter(
                 User.id == user.supervisor_id,
-                User.status == 'active'
+                User.status == 'ACTIVE'
             ).first()
 
             if supervisor:
@@ -3733,14 +3742,14 @@ def _generate_review_assignments(cycle_id: str, db: Session):
         # Get all subordinates
         subordinate_ids = db.query(User.id).filter(
             User.supervisor_id == user.id,
-            User.status == 'active'
+            User.status == 'ACTIVE'
         ).all()
         excluded_ids.extend([sub_id[0] for sub_id in subordinate_ids])
 
         # Get eligible peers from same department
         dept_users = db.query(User).filter(
             User.organization_id == user.organization_id,
-            User.status == 'active',
+            User.status == 'ACTIVE',
             User.id.notin_(excluded_ids)
         ).order_by(func.random()).limit(peer_count).all()
 

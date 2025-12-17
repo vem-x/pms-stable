@@ -28,7 +28,8 @@
       "Bash(del \"C:\\Users\\DELL\\makp\\dev\\PMS\\backend\\start-backend-local.ps1\")",
       "Bash(del \"C:\\Users\\DELL\\makp\\dev\\PMS\\backend\\test_goal_validator.py\")",
       "Bash(ls:*)",
-      "Bash(del NUL)"
+      "Bash(del NUL)",
+      "Bash(del check_enum.py)"
     ],
     "deny": [],
     "ask": []

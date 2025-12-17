@@ -5,11 +5,11 @@ from enum import Enum
 import uuid
 
 class UserStatus(str, Enum):
-    PENDING_ACTIVATION = "pending_activation"
-    ACTIVE = "active"
-    SUSPENDED = "suspended"
-    ON_LEAVE = "on_leave"
-    ARCHIVED = "archived"
+    PENDING_ACTIVATION = "PENDING_ACTIVATION"
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+    ON_LEAVE = "ON_LEAVE"
+    ARCHIVED = "ARCHIVED"
 
 class UserBase(BaseModel):
     email: EmailStr

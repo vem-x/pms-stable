@@ -31,6 +31,7 @@ class SystemPermissions:
     USER_EDIT = "user_edit"
     USER_SUSPEND = "user_suspend"
     USER_ACTIVATE = "user_activate"
+    USER_ON_LEAVE = "user_on_leave"
     USER_ARCHIVE = "user_archive"
     USER_VIEW_ALL = "user_view_all"
     USER_HISTORY_VIEW = "user_history_view"

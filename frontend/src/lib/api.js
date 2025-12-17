@@ -477,6 +477,22 @@ export const initiatives = {
   },
 
   /**
+   * Get list of users that can be assigned to initiatives
+   * @returns {Promise<Array>} List of assignable users
+   */
+  async getAssignableUsers() {
+    return GET('/api/initiatives/assignable-users')
+  },
+
+  /**
+   * Check if current user has supervisees
+   * @returns {Promise<Object>} {has_supervisees: boolean, supervisee_count: number}
+   */
+  async hasSupervisees() {
+    return GET('/api/initiatives/has-supervisees')
+  },
+
+  /**
    * Approve or reject initiative (for supervisors)
    * @param {string} id - Initiative ID
    * @param {Object} approval - Approval data {approved: boolean, rejection_reason?: string}
@@ -484,6 +500,33 @@ export const initiatives = {
    */
   async approve(id, approval) {
     return PUT(`/api/initiatives/${id}/approve`, approval)
+  },
+
+  /**
+   * Accept an ASSIGNED initiative
+   * @param {string} id - Initiative ID
+   * @returns {Promise<Object>} Updated initiative data
+   */
+  async accept(id) {
+    return PUT(`/api/initiatives/${id}/accept`)
+  },
+
+  /**
+   * Start a PENDING initiative
+   * @param {string} id - Initiative ID
+   * @returns {Promise<Object>} Updated initiative data
+   */
+  async start(id) {
+    return PUT(`/api/initiatives/${id}/start`)
+  },
+
+  /**
+   * Mark ONGOING initiative as complete
+   * @param {string} id - Initiative ID
+   * @returns {Promise<Object>} Updated initiative data
+   */
+  async complete(id) {
+    return PUT(`/api/initiatives/${id}/complete`)
   },
 
   /**

@@ -149,20 +149,29 @@ function NavGroup({ title, items }) {
       <SidebarGroupLabel>{title}</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
-          {visibleItems.map((item) => (
-            <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton
-                asChild
-                 className={pathname === item.url&&"bg-black text-white"}
-                // isActive={pathname === item.url}
-              >
-                <Link href={item.url}>
-                  <item.icon className="h-4 w-4" />
-                  <span>{item.title}</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ))}
+          {visibleItems.map((item) => {
+            // Check if current path matches the item URL
+            // For /dashboard, only match exact path to prevent highlighting on all routes
+            // For other items, match if pathname exactly equals item.url OR starts with item.url followed by '/'
+            // This prevents /dashboard/goals-management from matching /dashboard/goals
+            const isActive = item.url === '/dashboard'
+              ? pathname === '/dashboard'
+              : pathname === item.url || pathname.startsWith(item.url + '/')
+
+            return (
+              <SidebarMenuItem key={item.title}>
+                <SidebarMenuButton
+                  asChild
+                  className={isActive ? "bg-black text-white" : ""}
+                >
+                  <Link href={item.url}>
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.title}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )
+          })}
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>

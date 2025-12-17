@@ -19,6 +19,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select"
 import { GET, POST, DELETE } from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
 import { useOrganizations } from "@/lib/react-query"
+import { toast } from "sonner"
 
 export default function ReviewCycleDetailPage() {
   const params = useParams()
@@ -37,6 +38,7 @@ export default function ReviewCycleDetailPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [departmentFilter, setDepartmentFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', description: '', onConfirm: () => {} })
 
   const { data: organizations = [] } = useOrganizations()
 
@@ -122,33 +124,47 @@ export default function ReviewCycleDetailPage() {
     }
   }
 
-  const deleteQuestion = async (questionId) => {
-    try {
-      await DELETE(`/api/reviews/questions/${questionId}`)
-      fetchCycleDetails() // Refresh the data
-    } catch (error) {
-      console.error('Error deleting question:', error)
-    }
+  const deleteQuestion = (questionId) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Question',
+      description: 'Are you sure you want to delete this question? This action cannot be undone.',
+      onConfirm: async () => {
+        try {
+          await DELETE(`/api/reviews/cycles/${cycleId}/questions/${questionId}`)
+          toast.success('Question deleted successfully')
+          fetchCycleDetails() // Refresh the data
+        } catch (error) {
+          console.error('Error deleting question:', error)
+          toast.error(error.message || 'Failed to delete question')
+        }
+      }
+    })
   }
 
-  const activateCycle = async () => {
-    if (!confirm('Are you sure you want to activate this review cycle? This will generate review assignments for all users and the cycle will go live.')) {
-      return
-    }
-
-    try {
-      await POST(`/api/reviews/cycles/${cycleId}/activate`, {})
-      fetchCycleDetails() // Refresh to show new status
-      alert('Review cycle activated successfully!')
-    } catch (error) {
-      console.error('Error activating cycle:', error)
-      alert('Failed to activate cycle. Please try again.')
-    }
+  const activateCycle = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Activate Review Cycle',
+      description: 'Are you sure you want to activate this review cycle? This will generate review assignments for all users and the cycle will go live.',
+      onConfirm: async () => {
+        try {
+          await POST(`/api/reviews/cycles/${cycleId}/activate`, {})
+          toast.success('Review cycle activated successfully!')
+          fetchCycleDetails() // Refresh to show new status
+        } catch (error) {
+          console.error('Error activating cycle:', error)
+          toast.error(error.message || 'Failed to activate cycle')
+        }
+      }
+    })
   }
 
   const getStatusColor = (status) => {
-    switch (status) {
+    const normalizedStatus = status?.toLowerCase()
+    switch (normalizedStatus) {
       case 'draft': return 'bg-gray-100 text-gray-800'
+      case 'scheduled': return 'bg-purple-100 text-purple-800'
       case 'active': return 'bg-blue-100 text-blue-800'
       case 'completed': return 'bg-green-100 text-green-800'
       case 'cancelled': return 'bg-red-100 text-red-800'
@@ -204,7 +220,7 @@ export default function ReviewCycleDetailPage() {
             </div>
           </div>
         </div>
-        {cycle.status === 'draft' && (
+        {cycle.status?.toUpperCase() === 'DRAFT' && (
           <Button onClick={activateCycle}>
             <Settings className="w-4 h-4 mr-2" />
             Launch Cycle
@@ -359,11 +375,7 @@ export default function ReviewCycleDetailPage() {
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  onClick={() => {
-                                    if (confirm('Delete this question?')) {
-                                      deleteQuestion(question.id)
-                                    }
-                                  }}
+                                  onClick={() => deleteQuestion(question.id)}
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
@@ -513,7 +525,7 @@ export default function ReviewCycleDetailPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => router.push(`/dashboard/reviews/${cycleId}/user/${review.user_id}`)}
+                          onClick={() => router.push(`/dashboard/review-management/${cycleId}/user/${review.user_id}`)}
                         >
                           <Eye className="w-4 h-4 mr-1" />
                           Details
@@ -546,6 +558,27 @@ export default function ReviewCycleDetailPage() {
         reviewType={currentReviewType}
         traits={traits}
       />
+
+      {/* Confirmation Dialog */}
+      <Dialog open={confirmDialog.isOpen} onOpenChange={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{confirmDialog.title}</DialogTitle>
+            <DialogDescription>{confirmDialog.description}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}>
+              Cancel
+            </Button>
+            <Button onClick={() => {
+              confirmDialog.onConfirm()
+              setConfirmDialog({ ...confirmDialog, isOpen: false })
+            }}>
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
