@@ -2875,8 +2875,8 @@ def _get_employee_task_performance(user_id: int, date_filter: datetime, db: Sess
     # Count leadership roles (tasks where user is team head)
     leadership_count = len([t for t in tasks if t.team_head_id == user_id])
 
-    # Count active tasks (pending, ongoing, or completed but not approved)
-    active_tasks = len([t for t in tasks if t.status in [InitiativeStatus.PENDING, InitiativeStatus.ONGOING, InitiativeStatus.COMPLETED]])
+    # Count active tasks (pending, ongoing, or under review but not approved)
+    active_tasks = len([t for t in tasks if t.status in [InitiativeStatus.PENDING, InitiativeStatus.ONGOING, InitiativeStatus.UNDER_REVIEW]])
 
     # Calculate extension requests ratio
     from models import InitiativeExtension

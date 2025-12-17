@@ -9,12 +9,13 @@ class InitiativeType(str, Enum):
     GROUP = "GROUP"
 
 class InitiativeStatus(str, Enum):
-    PENDING_APPROVAL = "PENDING_APPROVAL"  # Staff created, waiting for supervisor approval
-    ASSIGNED = "ASSIGNED"  # Supervisor approved and assigned
-    REJECTED = "REJECTED"  # Supervisor rejected
-    STARTED = "STARTED"  # Assignee started working
-    COMPLETED = "COMPLETED"  # Assignee completed work
-    APPROVED = "APPROVED"  # Supervisor reviewed and approved with score
+    PENDING_APPROVAL = "PENDING_APPROVAL"  # Created by staff, waiting for supervisor approval
+    ASSIGNED = "ASSIGNED"  # Supervisor created and assigned to me, waiting for acceptance
+    PENDING = "PENDING"  # Accepted or approved, ready to start work
+    ONGOING = "ONGOING"  # Actively working on the initiative
+    UNDER_REVIEW = "UNDER_REVIEW"  # Submitted for supervisor review
+    APPROVED = "APPROVED"  # Supervisor reviewed and approved with grade
+    REJECTED = "REJECTED"  # Supervisor rejected during approval
     OVERDUE = "OVERDUE"  # Past due date
 
 class InitiativeUrgency(str, Enum):

@@ -485,7 +485,7 @@ async def get_initiative_stats(
     average_score = sum(initiative.score for initiative in scored_initiatives) / len(scored_initiatives) if scored_initiatives else None
 
     completed_or_approved = sum(1 for initiative in initiatives
-                              if initiative.status in [InitiativeStatus.COMPLETED, InitiativeStatus.APPROVED])
+                              if initiative.status in [InitiativeStatus.UNDER_REVIEW, InitiativeStatus.APPROVED])
     completion_rate = (completed_or_approved / total_initiatives * 100) if total_initiatives > 0 else 0
 
     return InitiativeStats(

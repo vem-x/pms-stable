@@ -750,7 +750,7 @@ function InitiativeSubmissionDialog({ initiative, isOpen, onClose, onSubmit }) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Submit Initiative</DialogTitle>
@@ -766,10 +766,14 @@ function InitiativeSubmissionDialog({ initiative, isOpen, onClose, onSubmit }) {
                 id="report"
                 value={formData.report}
                 onChange={(e) => setFormData({ ...formData, report: e.target.value })}
-                placeholder="Describe what was completed and any relevant details"
-                rows={6}
+                placeholder="Provide a detailed report of what was completed, challenges faced, outcomes achieved, and any relevant details..."
+                rows={15}
+                className="min-h-[300px] resize-y"
                 required
               />
+              <p className="text-xs text-muted-foreground">
+                {formData.report.length} characters
+              </p>
             </div>
 
             {/* File Upload for Submission */}

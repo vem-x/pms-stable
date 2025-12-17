@@ -160,14 +160,14 @@ class InitiativeWorkflowService:
 
     def start_initiative(self, initiative_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         """
-        Start an initiative (change status from ASSIGNED to STARTED)
+        Start an initiative (change status from PENDING to ONGOING)
         """
         initiative = self.db.query(Initiative).filter(Initiative.id == initiative_id).first()
         if not initiative:
             return False
 
-        if initiative.status != InitiativeStatus.ASSIGNED:
-            raise ValueError("Initiative can only be started from ASSIGNED status")
+        if initiative.status != InitiativeStatus.PENDING:
+            raise ValueError("Initiative can only be started from PENDING status")
 
         # Verify user is assigned to initiative
         assignment = self.db.query(InitiativeAssignment).filter(
@@ -177,7 +177,7 @@ class InitiativeWorkflowService:
         if not assignment:
             raise ValueError("User is not assigned to this initiative")
 
-        initiative.status = InitiativeStatus.STARTED
+        initiative.status = InitiativeStatus.ONGOING
         self.db.commit()
 
         return True
@@ -203,8 +203,8 @@ class InitiativeWorkflowService:
             if pending_extension:
                 raise ValueError("Cannot submit overdue initiative with pending extension request")
 
-        if initiative.status not in [InitiativeStatus.STARTED, InitiativeStatus.OVERDUE]:
-            raise ValueError("Initiative must be started to submit")
+        if initiative.status not in [InitiativeStatus.ONGOING, InitiativeStatus.OVERDUE]:
+            raise ValueError("Initiative must be ongoing to submit")
 
         # For group initiatives, verify submitter is team head
         if initiative.type == InitiativeType.GROUP:
