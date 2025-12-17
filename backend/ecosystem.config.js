@@ -7,7 +7,7 @@ module.exports = {
       name: "pms-backend",
       script: "powershell.exe",
       args: "-ExecutionPolicy Bypass -File start-with-migrations.ps1",
-      cwd: process.env.BACKEND_PATH || "C:/Users/vem/pms-stable/backend",
+      // cwd defaults to the directory where this ecosystem.config.js file is located
       interpreter: "none",
       autorestart: true,
       watch: false,
