@@ -107,12 +107,7 @@ async def onboard_user(
             detail="Invalid or expired onboarding token"
         )
 
-    # Check if token has expired
-    if user.onboarding_token_expires_at and user.onboarding_token_expires_at < datetime.now():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Onboarding token has expired. Please contact your administrator to resend the onboarding link."
-        )
+ 
 
     if user.password_hash:
         raise HTTPException(

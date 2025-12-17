@@ -1383,7 +1383,7 @@ function InitiativeDetailModal({ initiative, isOpen, onClose, onEdit, onDelete, 
           )}
 
           {/* Supervisor/Assigner reviews UNDER_REVIEW initiative */}
-          {(initiative.status === 'UNDER_REVIEW' || initiative.status === 'under_review') && canUserReview(initiative) && (
+          {(initiative.status === 'UNDER_REVIEW' || initiative.status === 'under_review')   && (
             <Button onClick={() => {
               onReview(initiative)
               onClose()
