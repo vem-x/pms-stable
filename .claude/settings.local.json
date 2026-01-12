@@ -32,7 +32,9 @@
       "Bash(del check_enum.py)",
       "Bash(npm install:*)",
       "Bash(grep:*)",
-      "Bash(ssh:*)"
+      "Bash(ssh:*)",
+      "Bash(Out-Null)",
+      "Bash(Write-Host 'Syntax OK' \")"
     ],
     "deny": [],
     "ask": []
