@@ -11,8 +11,11 @@ Write-Host ""
 
 # Run migrations
 Write-Host "Running database migrations..." -ForegroundColor Yellow
+# Temporarily allow stderr output without stopping
+$ErrorActionPreference = "Continue"
 $migrationOutput = python -m alembic upgrade head 2>&1
 $migrationExitCode = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
 
 if ($migrationExitCode -eq 0) {
     Write-Host "OK - Migrations completed successfully" -ForegroundColor Green
