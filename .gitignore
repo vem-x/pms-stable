@@ -153,3 +153,4 @@ ssl/
 *.temp
 temp/
 tmp/
+tmpclaude-*
