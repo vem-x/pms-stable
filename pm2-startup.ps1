@@ -1,4 +1,3 @@
-#!/usr/bin/env pwsh
 # PM2 Startup Script - Universal (works on any machine)
 # Runs migrations and starts both backend and frontend with PM2
 
@@ -46,11 +45,11 @@ try {
     if ($migrationExitCode -eq 0) {
         Add-Content -Path $logFile -Value "$timestamp - Database migrations completed successfully"
         Add-Content -Path $logFile -Value "$timestamp - Migration output: $migrationOutput"
-        Write-Host "✓ Migrations completed successfully" -ForegroundColor Green
+        Write-Host "OK - Migrations completed successfully" -ForegroundColor Green
     } else {
         Add-Content -Path $logFile -Value "$timestamp - ERROR: Database migration failed with exit code $migrationExitCode"
         Add-Content -Path $logFile -Value "$timestamp - Migration error output: $migrationOutput"
-        Write-Host "✗ Migration failed!" -ForegroundColor Red
+        Write-Host "ERROR - Migration failed!" -ForegroundColor Red
         throw "Database migration failed. Backend startup aborted."
     }
 
@@ -58,7 +57,7 @@ try {
     Write-Host "Starting backend with PM2..." -ForegroundColor Yellow
     pm2 start ecosystem.config.js
     Add-Content -Path $logFile -Value "$timestamp - Backend started from ecosystem.config.js"
-    Write-Host "✓ Backend started" -ForegroundColor Green
+    Write-Host "OK - Backend started" -ForegroundColor Green
 
     # Start frontend from ecosystem file
     $frontendPath = Join-Path $projectRoot "frontend"
@@ -66,12 +65,12 @@ try {
     Write-Host "Starting frontend with PM2..." -ForegroundColor Yellow
     pm2 start ecosystem.config.js
     Add-Content -Path $logFile -Value "$timestamp - Frontend started from ecosystem.config.js"
-    Write-Host "✓ Frontend started" -ForegroundColor Green
+    Write-Host "OK - Frontend started" -ForegroundColor Green
 
     # Save PM2 state
     pm2 save --force
     Add-Content -Path $logFile -Value "$timestamp - PM2 state saved"
-    Write-Host "✓ PM2 state saved" -ForegroundColor Green
+    Write-Host "OK - PM2 state saved" -ForegroundColor Green
 
     Write-Host ""
     Write-Host "=== Startup Complete ===" -ForegroundColor Cyan
@@ -79,6 +78,6 @@ try {
 
 } catch {
     Add-Content -Path $logFile -Value "$timestamp - ERROR: $_"
-    Write-Host "✗ ERROR: $_" -ForegroundColor Red
+    Write-Host "ERROR: $_" -ForegroundColor Red
     exit 1
 }
