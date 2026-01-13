@@ -36,7 +36,11 @@
       "Bash(Out-Null)",
       "Bash(Write-Host 'Syntax OK' \")",
       "Bash(git config:*)",
-      "Bash(timeout 30 python:*)"
+      "Bash(timeout 30 python:*)",
+      "Bash(alembic revision:*)",
+      "Bash(alembic upgrade:*)",
+      "Bash(alembic current:*)",
+      "Bash(alembic history:*)"
     ],
     "deny": [],
     "ask": []

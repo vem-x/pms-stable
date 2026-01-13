@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 
 from database import get_db
-from models import Goal, GoalType, GoalStatus, User, Quarter, GoalFreezeLog
+from models import Goal, GoalType, GoalStatus, User, Quarter, GoalFreezeLog, Organization
 from schemas.goals import (
     GoalCreate, GoalUpdate, GoalProgressUpdate, GoalStatusUpdate,
     Goal as GoalSchema, GoalWithChildren, GoalProgressReport, GoalList, GoalStats,
@@ -66,12 +66,16 @@ async def get_goals(
 
         # Users can see:
         # 1. All organizational goals (yearly/quarterly) - everyone can view
-        # 2. Individual goals they own
-        # 3. Individual goals owned by their supervisees (for approval/review)
-        # 4. Goals they created
+        # 2. Departmental goals in their accessible organizations
+        # 3. Individual goals they own
+        # 4. Individual goals owned by their supervisees (for approval/review)
+        # 5. Goals they created
         from sqlalchemy import or_
+        accessible_org_ids = permission_service.get_accessible_organizations(user)
+
         visibility_filter = or_(
             Goal.type.in_([GoalType.YEARLY, GoalType.QUARTERLY]),  # All organizational goals
+            (Goal.type == GoalType.DEPARTMENTAL) & (Goal.organization_id.in_(accessible_org_ids)),  # Departmental goals in accessible orgs
             Goal.owner_id == user.id,  # Individual goals owned by user
             Goal.owner_id.in_(supervisee_ids_subquery),  # Individual goals owned by supervisees
             Goal.created_by == user.id  # Goals created by user
@@ -628,9 +632,10 @@ async def create_goal(
     """
     Create new goal with permission gating by type
     - YEARLY/QUARTERLY: Company-wide organizational goals (requires goal_create_yearly/quarterly permission)
+    - DEPARTMENTAL: Department/Directorate-specific goals (requires goal_create_departmental permission)
     - INDIVIDUAL: Personal employee goals (no special permission required, starts as PENDING_APPROVAL)
     """
-    
+
     user = db.query(User).filter(User.id == current_user.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -643,6 +648,19 @@ async def create_goal(
         required_permission = f"goal_create_{goal_data.type.value.lower()}"
         if not permission_service.user_has_permission(user, required_permission):
             raise HTTPException(status_code=403, detail=f"Missing permission: {required_permission}")
+
+    # Validate departmental goal requirements
+    if goal_data.type == GoalType.DEPARTMENTAL:
+        if not goal_data.organization_id:
+            raise HTTPException(status_code=400, detail="Organization ID is required for departmental goals")
+
+        # Verify organization exists and user can access it
+        org = db.query(Organization).filter(Organization.id == goal_data.organization_id).first()
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+
+        if not permission_service.user_can_access_organization(user, goal_data.organization_id):
+            raise HTTPException(status_code=403, detail="Cannot create goal for organization outside your scope")
 
     # Validate parent goal relationship if specified
     if goal_data.parent_goal_id:
@@ -674,6 +692,7 @@ async def create_goal(
         parent_goal_id=goal_data.parent_goal_id,
         created_by=user.id,
         owner_id=goal_data.owner_id if goal_data.owner_id else user.id,  # Default to creator as owner
+        organization_id=goal_data.organization_id,  # For DEPARTMENTAL goals
         status=initial_status
     )
 

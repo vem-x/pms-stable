@@ -65,7 +65,8 @@ import {
   useCreateGoalForSupervisee,
   useRespondToGoal,
   useRequestGoalChange,
-  useUsers
+  useUsers,
+  useOrganizations
 } from "@/lib/react-query"
 
 const statusColors = {
@@ -79,12 +80,14 @@ const statusColors = {
 const typeColors = {
   YEARLY: "bg-purple-100 text-purple-800 border-purple-200",
   QUARTERLY: "bg-blue-100 text-blue-800 border-blue-200",
+  DEPARTMENTAL: "bg-orange-100 text-orange-800 border-orange-200",
   INDIVIDUAL: "bg-green-100 text-green-800 border-green-200",
 }
 
 const typeIcons = {
   YEARLY: Building2,
   QUARTERLY: Calendar,
+  DEPARTMENTAL: Building2,
   INDIVIDUAL: User,
 }
 
@@ -264,6 +267,305 @@ function GoalCard({ goal, onEdit, onDelete, onUpdateProgress, onStatusChange, on
   )
 }
 
+function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYearly = false, canCreateQuarterly = false, canCreateDepartmental = false, organizations = [], isDepartmentalOnly = false, userOrganization = null, userScope = null }) {
+  const currentYear = new Date().getFullYear()
+  const currentMonth = new Date().getMonth() + 1
+  const currentQuarter = Math.ceil(currentMonth / 3)
+
+  // Determine available goal types based on permissions and context
+  const availableTypes = []
+  if (isDepartmentalOnly) {
+    // When on departmental tab, only show departmental option
+    if (canCreateDepartmental) availableTypes.push({ value: "DEPARTMENTAL", label: "Departmental" })
+  } else {
+    // On organizational tab, show yearly/quarterly
+    if (canCreateYearly) availableTypes.push({ value: "YEARLY", label: "Yearly (Company-wide)" })
+    if (canCreateQuarterly) availableTypes.push({ value: "QUARTERLY", label: "Quarterly (Company-wide)" })
+  }
+
+  // Filter organizations based on user's scope
+  const scopedOrganizations = useMemo(() => {
+    if (!userOrganization || !organizations || organizations.length === 0) return []
+
+    // If user has global scope, show all departments and directorates
+    if (userScope === 'global') {
+      return organizations.filter(org =>
+        org.level === 'DEPARTMENT' ||
+        org.level === 'DIRECTORATE' ||
+        org.level === 'department' ||
+        org.level === 'directorate'
+      )
+    }
+
+    // Otherwise, only show user's own organization if it's a department or directorate
+    const userOrg = organizations.find(org => org.id === userOrganization)
+    if (userOrg && (
+      userOrg.level === 'DEPARTMENT' ||
+      userOrg.level === 'DIRECTORATE' ||
+      userOrg.level === 'department' ||
+      userOrg.level === 'directorate'
+    )) {
+      return [userOrg]
+    }
+
+    return []
+  }, [organizations, userOrganization, userScope])
+
+  // Auto-set organization_id for departmental goals based on user's scope
+  const defaultOrgId = useMemo(() => {
+    if (isDepartmentalOnly && scopedOrganizations.length === 1) {
+      return scopedOrganizations[0].id
+    }
+    return ""
+  }, [isDepartmentalOnly, scopedOrganizations])
+
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    type: availableTypes[0]?.value || (isDepartmentalOnly ? "DEPARTMENTAL" : "YEARLY"),
+    start_date: "",
+    end_date: "",
+    quarter: `Q${currentQuarter}`,
+    year: currentYear,
+    organization_id: defaultOrgId,
+    parent_goal_id: "",
+  })
+
+  const { data: goals = [] } = useGoals()
+
+  // Update form data when goal changes
+  useEffect(() => {
+    if (goal) {
+      setFormData({
+        title: goal.title || "",
+        description: goal.description || "",
+        type: goal.type || availableTypes[0]?.value || (isDepartmentalOnly ? "DEPARTMENTAL" : "YEARLY"),
+        start_date: goal.start_date || "",
+        end_date: goal.end_date || "",
+        quarter: goal.quarter || `Q${currentQuarter}`,
+        year: goal.year || currentYear,
+        organization_id: goal.organization_id || defaultOrgId,
+        parent_goal_id: goal.parent_goal_id || "",
+      })
+    } else {
+      setFormData({
+        title: "",
+        description: "",
+        type: availableTypes[0]?.value || (isDepartmentalOnly ? "DEPARTMENTAL" : "YEARLY"),
+        start_date: "",
+        end_date: "",
+        quarter: `Q${currentQuarter}`,
+        year: currentYear,
+        organization_id: defaultOrgId,
+        parent_goal_id: "",
+      })
+    }
+  }, [goal, currentQuarter, currentYear, availableTypes, isDepartmentalOnly, defaultOrgId])
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    const submitData = {
+      ...formData,
+      start_date: formData.start_date || null,
+      end_date: formData.end_date || null,
+      parent_goal_id: formData.parent_goal_id || null,
+    }
+
+    // Only include organization_id for DEPARTMENTAL goals
+    if (formData.type === "DEPARTMENTAL") {
+      submitData.organization_id = formData.organization_id
+    } else {
+      delete submitData.organization_id
+    }
+
+    onSubmit(submitData)
+    onClose()
+  }
+
+  // Potential parents: YEARLY/QUARTERLY for DEPARTMENTAL, YEARLY for QUARTERLY
+  const potentialParents = goals.filter((g) => {
+    if (formData.type === "DEPARTMENTAL") {
+      return (g.type === "YEARLY" || g.type === "QUARTERLY") && g.status === "ACTIVE"
+    }
+    if (formData.type === "QUARTERLY") {
+      return g.type === "YEARLY" && g.status === "ACTIVE"
+    }
+    return false
+  })
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>{goal ? "Edit Organizational Goal" : "Create Organizational Goal"}</DialogTitle>
+            <DialogDescription>
+              Create a company-wide or departmental goal
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-6 py-4">
+            {/* Goal Type Selection */}
+            {availableTypes.length > 1 && !goal && (
+              <div className="grid gap-2">
+                <Label htmlFor="type">Goal Type *</Label>
+                <Select
+                  value={formData.type}
+                  onValueChange={(value) => setFormData({ ...formData, type: value, organization_id: "", parent_goal_id: "" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableTypes.map((type) => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Organization Selector (for DEPARTMENTAL goals only) */}
+            {formData.type === "DEPARTMENTAL" && (
+              <div className="grid gap-2">
+                <Label htmlFor="organization">Department/Directorate *</Label>
+                {scopedOrganizations.length === 1 ? (
+                  <div className="p-3 bg-blue-50 rounded-md border border-blue-200">
+                    <p className="text-sm font-medium text-blue-900">
+                      {scopedOrganizations[0].name} ({scopedOrganizations[0].level})
+                    </p>
+                    <p className="text-xs text-blue-700 mt-1">
+                      Auto-selected based on your organizational scope
+                    </p>
+                  </div>
+                ) : (
+                  <SearchableSelect
+                    value={formData.organization_id}
+                    onValueChange={(value) => setFormData({ ...formData, organization_id: value })}
+                    options={scopedOrganizations.map(org => ({
+                      value: org.id,
+                      label: `${org.name} (${org.level})`
+                    }))}
+                    placeholder="Select department or directorate"
+                    searchPlaceholder="Search organization..."
+                    emptyText="No organizations found."
+                    required
+                  />
+                )}
+              </div>
+            )}
+
+            <div className="grid gap-2">
+              <Label htmlFor="title">Goal Title *</Label>
+              <Input
+                id="title"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                placeholder="Enter goal title"
+                required
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Describe what you want to achieve"
+                rows={4}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="quarter">Quarter *</Label>
+                <Select
+                  value={formData.quarter}
+                  onValueChange={(value) => setFormData({ ...formData, quarter: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Q1">Q1 (Jan-Mar)</SelectItem>
+                    <SelectItem value="Q2">Q2 (Apr-Jun)</SelectItem>
+                    <SelectItem value="Q3">Q3 (Jul-Sep)</SelectItem>
+                    <SelectItem value="Q4">Q4 (Oct-Dec)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="year">Year *</Label>
+                <Input
+                  id="year"
+                  type="number"
+                  min={currentYear - 1}
+                  max={currentYear + 5}
+                  value={formData.year}
+                  onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="start_date">Start Date (Optional)</Label>
+                <Input
+                  id="start_date"
+                  type="date"
+                  value={formData.start_date}
+                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="end_date">End Date (Optional)</Label>
+                <Input
+                  id="end_date"
+                  type="date"
+                  value={formData.end_date}
+                  onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {potentialParents.length > 0 && (
+              <div className="grid gap-2">
+                <Label htmlFor="parent">Link to Parent Goal (Optional)</Label>
+                <SearchableSelect
+                  value={formData.parent_goal_id || "none"}
+                  onValueChange={(value) => setFormData({ ...formData, parent_goal_id: value === "none" ? "" : value })}
+                  options={[
+                    { value: "none", label: "No parent goal" },
+                    ...potentialParents.map((g) => ({
+                      value: g.id,
+                      label: `${g.title} (${g.type}${g.quarter ? ` - ${g.quarter} ${g.year}` : ''})`
+                    }))
+                  ]}
+                  placeholder="Select parent goal"
+                  searchPlaceholder="Search parent goals..."
+                  emptyText="No parent goals found."
+                />
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit">{goal ? "Update Goal" : "Create Goal"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSupervisee = false, supervisees = [] }) {
   const currentYear = new Date().getFullYear()
   const currentMonth = new Date().getMonth() + 1
@@ -325,7 +627,7 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
   }
 
   const potentialParents = goals.filter((g) =>
-    (g.type === "YEARLY" || g.type === "QUARTERLY") && g.status === "ACTIVE"
+    (g.type === "YEARLY" || g.type === "QUARTERLY" || g.type === "DEPARTMENTAL") && g.status === "ACTIVE"
   )
 
   return (
@@ -466,22 +768,20 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
             {potentialParents.length > 0 && (
               <div className="grid gap-2">
                 <Label htmlFor="parent">Link to Organizational Goal (Optional)</Label>
-                <Select
+                <SearchableSelect
                   value={formData.parent_goal_id || "none"}
                   onValueChange={(value) => setFormData({ ...formData, parent_goal_id: value === "none" ? "" : value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select parent goal" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No parent goal</SelectItem>
-                    {potentialParents.map((g) => (
-                      <SelectItem key={g.id} value={g.id}>
-                        {g.title} ({g.type})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  options={[
+                    { value: "none", label: "No parent goal" },
+                    ...potentialParents.map((g) => ({
+                      value: g.id,
+                      label: `${g.title} (${g.type}${g.quarter ? ` - ${g.quarter} ${g.year}` : ''})`
+                    }))
+                  ]}
+                  placeholder="Select parent goal"
+                  searchPlaceholder="Search organizational goals..."
+                  emptyText="No parent goals found."
+                />
               </div>
             )}
           </div>
@@ -951,16 +1251,21 @@ export default function GoalsPage() {
   const [activeTab, setActiveTab] = useState("organizational")
   const [searchTerm, setSearchTerm] = useState("")
   const [yearFilter, setYearFilter] = useState("all")
+  const [quarterFilter, setQuarterFilter] = useState("all")
   const [superviseeFilter, setSuperviseeFilter] = useState("all")
 
   const { user } = useAuth()
   const canEditGoals = usePermission("goal_edit")
   const canUpdateProgress = usePermission("goal_progress_update")
   const canApproveGoals = usePermission("goal_approve")
+  const canCreateYearlyGoals = usePermission("goal_create_yearly")
+  const canCreateQuarterlyGoals = usePermission("goal_create_quarterly")
+  const canCreateDepartmentalGoals = usePermission("goal_create_departmental")
 
   const { data: goals = [], isLoading } = useGoals()
   const { data: superviseeGoals = [], refetch: refetchSuperviseeGoals } = useSuperviseeGoals()
   const { data: users = [], isLoading: isLoadingUsers } = useUsers()
+  const { data: organizations = [] } = useOrganizations()
 
   // Refetch supervisee goals when switching to team tab
   useEffect(() => {
@@ -1001,17 +1306,29 @@ export default function GoalsPage() {
     ...availableYears.map(year => ({ value: year, label: year }))
   ]
 
+  const quarterOptions = [
+    { value: "all", label: "All Quarters" },
+    { value: "Q1", label: "Q1 (Jan-Mar)" },
+    { value: "Q2", label: "Q2 (Apr-Jun)" },
+    { value: "Q3", label: "Q3 (Jul-Sep)" },
+    { value: "Q4", label: "Q4 (Oct-Dec)" }
+  ]
+
   const superviseeOptions = [
     { value: "all", label: "All Team Members" },
     ...supervisees.map(s => ({ value: s.id, label: s.name }))
   ]
 
-  // Filter goals by type, year, and search term
+  // Filter goals by type, year, quarter, and search term
   const organizationalGoals = useMemo(() => {
     let filtered = goals.filter(g => g.type === "YEARLY" || g.type === "QUARTERLY")
 
     if (yearFilter !== "all") {
       filtered = filtered.filter(g => g.year?.toString() === yearFilter)
+    }
+
+    if (quarterFilter !== "all") {
+      filtered = filtered.filter(g => g.quarter === quarterFilter)
     }
 
     if (searchTerm) {
@@ -1022,7 +1339,28 @@ export default function GoalsPage() {
     }
 
     return filtered
-  }, [goals, yearFilter, searchTerm])
+  }, [goals, yearFilter, quarterFilter, searchTerm])
+
+  const departmentalGoals = useMemo(() => {
+    let filtered = goals.filter(g => g.type === "DEPARTMENTAL")
+
+    if (yearFilter !== "all") {
+      filtered = filtered.filter(g => g.year?.toString() === yearFilter)
+    }
+
+    if (quarterFilter !== "all") {
+      filtered = filtered.filter(g => g.quarter === quarterFilter)
+    }
+
+    if (searchTerm) {
+      filtered = filtered.filter(g =>
+        g.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        g.description?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+
+    return filtered
+  }, [goals, yearFilter, quarterFilter, searchTerm])
 
   const myIndividualGoals = useMemo(() => {
     let filtered = goals.filter(g => g.type === "INDIVIDUAL" && g.owner_id === user?.user_id)
@@ -1031,6 +1369,10 @@ export default function GoalsPage() {
       filtered = filtered.filter(g => g.year?.toString() === yearFilter)
     }
 
+    if (quarterFilter !== "all") {
+      filtered = filtered.filter(g => g.quarter === quarterFilter)
+    }
+
     if (searchTerm) {
       filtered = filtered.filter(g =>
         g.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1039,7 +1381,7 @@ export default function GoalsPage() {
     }
 
     return filtered
-  }, [goals, user, yearFilter, searchTerm])
+  }, [goals, user, yearFilter, quarterFilter, searchTerm])
 
   // Filtered supervisee goals
   const filteredSuperviseeGoals = useMemo(() => {
@@ -1047,6 +1389,10 @@ export default function GoalsPage() {
 
     if (yearFilter !== "all") {
       filtered = filtered.filter(g => g.year?.toString() === yearFilter)
+    }
+
+    if (quarterFilter !== "all") {
+      filtered = filtered.filter(g => g.quarter === quarterFilter)
     }
 
     if (searchTerm) {
@@ -1062,7 +1408,7 @@ export default function GoalsPage() {
     }
 
     return filtered
-  }, [superviseeGoals, yearFilter, searchTerm, superviseeFilter])
+  }, [superviseeGoals, yearFilter, quarterFilter, searchTerm, superviseeFilter])
 
   // Handlers
   const handleCreate = (data) => {
@@ -1234,10 +1580,14 @@ export default function GoalsPage() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full max-w-2xl grid-cols-3">
+        <TabsList className={`grid w-full max-w-3xl ${isSupervisor ? 'grid-cols-4' : 'grid-cols-3'}`}>
           <TabsTrigger value="organizational" className="flex items-center gap-2">
             <Building2 className="h-4 w-4" />
             Organizational
+          </TabsTrigger>
+          <TabsTrigger value="departmental" className="flex items-center gap-2">
+            <Building2 className="h-4 w-4" />
+            Departmental
           </TabsTrigger>
           <TabsTrigger value="my" className="flex items-center gap-2">
             <Target className="h-4 w-4" />
@@ -1253,9 +1603,24 @@ export default function GoalsPage() {
 
         {/* Organizational Goals Tab */}
         <TabsContent value="organizational" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Company-wide yearly and quarterly goals
+            </p>
+            {(canCreateYearlyGoals || canCreateQuarterlyGoals) && (
+              <Button onClick={() => {
+                setEditingGoal(null)
+                setIsFormOpen(true)
+              }}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Organizational Goal
+              </Button>
+            )}
+          </div>
+
           {/* Search and Filters */}
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="relative flex-1 min-w-[250px]">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search goals..."
@@ -1272,15 +1637,26 @@ export default function GoalsPage() {
               placeholder="Filter by year"
               searchPlaceholder="Search year..."
               emptyText="No years found."
+              className="w-[160px]"
+            />
+
+            <SearchableSelect
+              value={quarterFilter}
+              onValueChange={setQuarterFilter}
+              options={quarterOptions}
+              placeholder="Filter by quarter"
+              searchPlaceholder="Search quarter..."
+              emptyText="No quarters found."
               className="w-[180px]"
             />
 
-            {(searchTerm || yearFilter !== "all") && (
+            {(searchTerm || yearFilter !== "all" || quarterFilter !== "all") && (
               <Button
                 variant="outline"
                 onClick={() => {
                   setSearchTerm("")
                   setYearFilter("all")
+                  setQuarterFilter("all")
                 }}
                 className="whitespace-nowrap"
               >
@@ -1324,7 +1700,139 @@ export default function GoalsPage() {
                 <div className="text-center py-12">
                   <Target className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">No organizational goals</h3>
-                  <p className="text-gray-600">Check back later for company-wide goals</p>
+                  <p className="text-gray-600">
+                    {(canCreateYearlyGoals || canCreateQuarterlyGoals)
+                      ? "Create your first organizational goal to get started"
+                      : "Check back later for company-wide goals"}
+                  </p>
+                  {(canCreateYearlyGoals || canCreateQuarterlyGoals) && (
+                    <Button onClick={() => {
+                      setEditingGoal(null)
+                      setIsFormOpen(true)
+                    }} className="mt-4">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Organizational Goal
+                    </Button>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Departmental Goals Tab */}
+        <TabsContent value="departmental" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Department and directorate-specific goals
+            </p>
+            {(canCreateDepartmentalGoals) && (
+              <Button onClick={() => {
+                setEditingGoal(null)
+                setIsFormOpen(true)
+              }}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Departmental Goal
+              </Button>
+            )}
+          </div>
+
+          {/* Search and Filters */}
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="relative flex-1 min-w-[250px]">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search goals..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+
+            <SearchableSelect
+              value={yearFilter}
+              onValueChange={setYearFilter}
+              options={yearOptions}
+              placeholder="Filter by year"
+              searchPlaceholder="Search year..."
+              emptyText="No years found."
+              className="w-[160px]"
+            />
+
+            <SearchableSelect
+              value={quarterFilter}
+              onValueChange={setQuarterFilter}
+              options={quarterOptions}
+              placeholder="Filter by quarter"
+              searchPlaceholder="Search quarter..."
+              emptyText="No quarters found."
+              className="w-[180px]"
+            />
+
+            {(searchTerm || yearFilter !== "all" || quarterFilter !== "all") && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSearchTerm("")
+                  setYearFilter("all")
+                  setQuarterFilter("all")
+                }}
+                className="whitespace-nowrap"
+              >
+                <X className="mr-2 h-4 w-4" />
+                Clear Filters
+              </Button>
+            )}
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Departmental Goals</CardTitle>
+              <CardDescription>
+                View department and directorate-specific goals
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {[...Array(6)].map((_, i) => (
+                    <Skeleton key={i} className="h-48" />
+                  ))}
+                </div>
+              ) : departmentalGoals.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {departmentalGoals.map((goal) => (
+                    <GoalCard
+                      key={goal.id}
+                      goal={goal}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      onUpdateProgress={handleUpdateProgressDialog}
+                      onStatusChange={handleStatusChange}
+                      onViewDetails={handleViewDetails}
+                      canEdit={canEditGoals}
+                      currentUserId={user?.user_id}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">No departmental goals</h3>
+                  <p className="text-gray-600">
+                    {canCreateDepartmentalGoals
+                      ? "Create your first departmental goal to get started"
+                      : "Check back later for departmental goals"}
+                  </p>
+                  {canCreateDepartmentalGoals && (
+                    <Button onClick={() => {
+                      setEditingGoal(null)
+                      setIsFormOpen(true)
+                    }} className="mt-4">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Departmental Goal
+                    </Button>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -1344,8 +1852,8 @@ export default function GoalsPage() {
           </div>
 
           {/* Search and Filters */}
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="relative flex-1 min-w-[250px]">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search goals..."
@@ -1362,15 +1870,26 @@ export default function GoalsPage() {
               placeholder="Filter by year"
               searchPlaceholder="Search year..."
               emptyText="No years found."
+              className="w-[160px]"
+            />
+
+            <SearchableSelect
+              value={quarterFilter}
+              onValueChange={setQuarterFilter}
+              options={quarterOptions}
+              placeholder="Filter by quarter"
+              searchPlaceholder="Search quarter..."
+              emptyText="No quarters found."
               className="w-[180px]"
             />
 
-            {(searchTerm || yearFilter !== "all") && (
+            {(searchTerm || yearFilter !== "all" || quarterFilter !== "all") && (
               <Button
                 variant="outline"
                 onClick={() => {
                   setSearchTerm("")
                   setYearFilter("all")
+                  setQuarterFilter("all")
                 }}
                 className="whitespace-nowrap"
               >
@@ -1433,8 +1952,8 @@ export default function GoalsPage() {
             </div>
 
             {/* Search and Filters */}
-            <div className="flex items-center gap-4">
-              <div className="relative flex-1 max-w-sm">
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="relative flex-1 min-w-[250px]">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Search goals or team members..."
@@ -1451,6 +1970,16 @@ export default function GoalsPage() {
                 placeholder="Filter by year"
                 searchPlaceholder="Search year..."
                 emptyText="No years found."
+                className="w-[160px]"
+              />
+
+              <SearchableSelect
+                value={quarterFilter}
+                onValueChange={setQuarterFilter}
+                options={quarterOptions}
+                placeholder="Filter by quarter"
+                searchPlaceholder="Search quarter..."
+                emptyText="No quarters found."
                 className="w-[180px]"
               />
 
@@ -1464,12 +1993,13 @@ export default function GoalsPage() {
                 className="w-[220px]"
               />
 
-              {(searchTerm || yearFilter !== "all" || superviseeFilter !== "all") && (
+              {(searchTerm || yearFilter !== "all" || quarterFilter !== "all" || superviseeFilter !== "all") && (
                 <Button
                   variant="outline"
                   onClick={() => {
                     setSearchTerm("")
                     setYearFilter("all")
+                    setQuarterFilter("all")
                     setSuperviseeFilter("all")
                   }}
                   className="whitespace-nowrap"
@@ -1529,17 +2059,38 @@ export default function GoalsPage() {
       </Tabs>
 
       {/* Dialogs */}
-      <IndividualGoalForm
-        goal={editingGoal}
-        isOpen={isFormOpen}
-        onClose={() => {
-          setIsFormOpen(false)
-          setEditingGoal(null)
-        }}
-        onSubmit={editingGoal ? handleUpdate : handleCreate}
-        canCreateForSupervisee={isSupervisor && activeTab === "team"}
-        supervisees={supervisees}
-      />
+      {/* Show OrganizationalGoalForm for organizational/departmental tabs if user has permissions */}
+      {(activeTab === "organizational" || activeTab === "departmental") &&
+       (canCreateYearlyGoals || canCreateQuarterlyGoals || canCreateDepartmentalGoals) ? (
+        <OrganizationalGoalForm
+          goal={editingGoal}
+          isOpen={isFormOpen}
+          onClose={() => {
+            setIsFormOpen(false)
+            setEditingGoal(null)
+          }}
+          onSubmit={editingGoal ? handleUpdate : handleCreate}
+          canCreateYearly={canCreateYearlyGoals}
+          canCreateQuarterly={canCreateQuarterlyGoals}
+          canCreateDepartmental={canCreateDepartmentalGoals}
+          organizations={organizations}
+          isDepartmentalOnly={activeTab === "departmental"}
+          userOrganization={user?.organization_id}
+          userScope={user?.scope}
+        />
+      ) : (
+        <IndividualGoalForm
+          goal={editingGoal}
+          isOpen={isFormOpen}
+          onClose={() => {
+            setIsFormOpen(false)
+            setEditingGoal(null)
+          }}
+          onSubmit={editingGoal ? handleUpdate : handleCreate}
+          canCreateForSupervisee={isSupervisor && activeTab === "team"}
+          supervisees={supervisees}
+        />
+      )}
 
       <ProgressUpdateDialog
         goal={updatingGoal}

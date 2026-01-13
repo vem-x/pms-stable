@@ -9,10 +9,11 @@ from datetime import datetime
 
 # Enums for Organization Levels
 class OrganizationLevel(str, enum.Enum):
-    GLOBAL = "global"
-    DIRECTORATE = "directorate"
-    DEPARTMENT = "department"
-    UNIT = "unit"
+    GLOBAL = "GLOBAL"
+    DIRECTORATE = "DIRECTORATE"
+    DEPARTMENT = "DEPARTMENT"
+    DIVISION = "DIVISION"  # NEW: Between Department and Unit
+    UNIT = "UNIT"
 
 # Enums for Scope Overrides
 class ScopeOverride(str, enum.Enum):
@@ -32,7 +33,8 @@ class UserStatus(str, enum.Enum):
 class GoalType(str, enum.Enum):
     YEARLY = "YEARLY"
     QUARTERLY = "QUARTERLY"
-    INDIVIDUAL = "INDIVIDUAL"  # New: Individual employee goals
+    DEPARTMENTAL = "DEPARTMENTAL"  # NEW: Department/Directorate-specific goals
+    INDIVIDUAL = "INDIVIDUAL"  # Individual employee goals
 
 class GoalStatus(str, enum.Enum):
     PENDING_APPROVAL = "PENDING_APPROVAL"  # Individual goals awaiting approval
@@ -258,6 +260,7 @@ class Goal(Base):
     parent_goal_id = Column(UUID(as_uuid=True), ForeignKey("goals.id"), nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # For INDIVIDUAL goals
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)  # For DEPARTMENTAL goals
 
     # Relationships
     parent_goal = relationship("Goal", remote_side=[id], back_populates="child_goals")
@@ -266,6 +269,7 @@ class Goal(Base):
     owner = relationship("User", foreign_keys=[owner_id], back_populates="owned_goals")
     approver = relationship("User", foreign_keys=[approved_by])
     freezer = relationship("User", foreign_keys=[frozen_by])
+    organization = relationship("Organization")  # For DEPARTMENTAL goals
     progress_reports = relationship("GoalProgressReport", back_populates="goal")
     initiatives = relationship("Initiative", back_populates="goal")
 
@@ -330,6 +334,7 @@ class Initiative(Base):
     submissions = relationship("InitiativeSubmission", back_populates="initiative", cascade="all, delete-orphan")
     documents = relationship("InitiativeDocument", back_populates="initiative", cascade="all, delete-orphan")
     extensions = relationship("InitiativeExtension", back_populates="initiative", cascade="all, delete-orphan")
+    subtasks = relationship("InitiativeSubTask", back_populates="initiative", cascade="all, delete-orphan")
 
 class InitiativeAssignment(Base):
     """
@@ -411,6 +416,30 @@ class InitiativeExtension(Base):
     initiative = relationship("Initiative", back_populates="extensions")
     requester = relationship("User", foreign_keys=[requested_by])
     reviewer = relationship("User", foreign_keys=[reviewed_by])
+
+class InitiativeSubTask(Base):
+    """
+    Sub-tasks for breaking down initiatives into smaller trackable units
+    Created by assignees during ONGOING phase for better task management
+    """
+    __tablename__ = "initiative_subtasks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(20), default='pending')  # pending, completed
+    sequence_order = Column(Integer, default=0)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Foreign Keys
+    initiative_id = Column(UUID(as_uuid=True), ForeignKey("initiatives.id"), nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+
+    # Relationships
+    initiative = relationship("Initiative", back_populates="subtasks")
+    creator = relationship("User")
 
 # Review System Models
 

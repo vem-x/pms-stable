@@ -1,6 +1,6 @@
 'use client'
 
-import { Bell, Search, Settings, LogOut } from "lucide-react"
+import { Bell, Search, Settings, LogOut, Check, X } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
@@ -15,11 +15,61 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { useAuth } from "@/lib/auth-context"
+import { useNotifications } from "@/lib/notification-context"
+import {
+  useNotificationsQuery,
+  useMarkNotificationAsRead,
+  useMarkAllNotificationsAsRead,
+  useDeleteNotification
+} from "@/lib/react-query"
+import { useEffect } from "react"
+import { formatDistanceToNow } from "date-fns"
 
 export function DashboardHeader() {
   const { user, logout } = useAuth()
   const router = useRouter()
+  const { unreadCount, isConnected, setInitialNotifications } = useNotifications()
+
+  // Fetch initial notifications
+  const { data: notificationsData, isLoading } = useNotificationsQuery({
+    limit: 10,
+    unread_only: false
+  })
+
+  const markAsReadMutation = useMarkNotificationAsRead()
+  const markAllAsReadMutation = useMarkAllNotificationsAsRead()
+  const deleteNotificationMutation = useDeleteNotification()
+
+  // Set initial notifications when data loads
+  useEffect(() => {
+    if (notificationsData) {
+      setInitialNotifications(
+        notificationsData.notifications || [],
+        notificationsData.unread_count || 0
+      )
+    }
+  }, [notificationsData, setInitialNotifications])
+
+  const handleNotificationClick = (notification) => {
+    if (!notification.is_read) {
+      markAsReadMutation.mutate(notification.id)
+    }
+    if (notification.action_url) {
+      router.push(notification.action_url)
+    }
+  }
+
+  const handleMarkAllAsRead = () => {
+    markAllAsReadMutation.mutate()
+  }
+
+  const handleDeleteNotification = (e, notificationId) => {
+    e.stopPropagation()
+    deleteNotificationMutation.mutate(notificationId)
+  }
 
   const userInitials = user?.name
     ? user.name.split(' ').map(n => n[0]).join('').toUpperCase()
@@ -49,43 +99,94 @@ export function DashboardHeader() {
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" className="relative">
             <Bell className="h-4 w-4" />
-            <Badge
-              variant="destructive"
-              className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs"
-            >
-              3
-            </Badge>
+            {unreadCount > 0 && (
+              <Badge
+                variant="destructive"
+                className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs"
+              >
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </Badge>
+            )}
+            {/* WebSocket connection indicator */}
+            {isConnected && (
+              <span className="absolute bottom-0 right-0 h-2 w-2 bg-green-500 rounded-full border-2 border-background" />
+            )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-80">
-          <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+        <DropdownMenuContent align="end" className="w-96">
+          <div className="flex items-center justify-between px-2 py-1.5">
+            <DropdownMenuLabel className="p-0">Notifications</DropdownMenuLabel>
+            {unreadCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleMarkAllAsRead}
+                className="h-auto py-1 px-2 text-xs"
+              >
+                <Check className="mr-1 h-3 w-3" />
+                Mark all read
+              </Button>
+            )}
+          </div>
           <DropdownMenuSeparator />
-          <DropdownMenuItem>
-            <div className="flex flex-col gap-1">
-              <p className="text-sm font-medium">New task assigned</p>
-              <p className="text-xs text-muted-foreground">
-                "Quarterly Review" has been assigned to you
-              </p>
+
+          {isLoading ? (
+            <div className="p-4 space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="flex flex-col gap-2">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-3 w-full" />
+                </div>
+              ))}
             </div>
-          </DropdownMenuItem>
-          <DropdownMenuItem>
-            <div className="flex flex-col gap-1">
-              <p className="text-sm font-medium">Goal achieved</p>
-              <p className="text-xs text-muted-foreground">
-                Marketing team achieved Q1 targets
-              </p>
+          ) : notificationsData?.notifications?.length > 0 ? (
+            <ScrollArea className="max-h-[400px]">
+              {notificationsData.notifications.map((notification) => (
+                <DropdownMenuItem
+                  key={notification.id}
+                  className={`flex flex-col items-start gap-1 p-3 cursor-pointer ${
+                    !notification.is_read ? 'bg-blue-50' : ''
+                  }`}
+                  onClick={() => handleNotificationClick(notification)}
+                >
+                  <div className="flex items-start justify-between w-full gap-2">
+                    <div className="flex-1 space-y-1">
+                      <p className={`text-sm ${!notification.is_read ? 'font-semibold' : 'font-medium'}`}>
+                        {notification.title}
+                      </p>
+                      <p className="text-xs text-muted-foreground line-clamp-2">
+                        {notification.message}
+                      </p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {notification.triggered_by_name && (
+                          <span>By {notification.triggered_by_name}</span>
+                        )}
+                        {notification.created_at && (
+                          <span>• {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}</span>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => handleDeleteNotification(e, notification.id)}
+                      className="h-6 w-6 p-0 hover:bg-red-100"
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </DropdownMenuItem>
+              ))}
+            </ScrollArea>
+          ) : (
+            <div className="p-6 text-center">
+              <Bell className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">No notifications</p>
             </div>
-          </DropdownMenuItem>
-          <DropdownMenuItem>
-            <div className="flex flex-col gap-1">
-              <p className="text-sm font-medium">Task overdue</p>
-              <p className="text-xs text-muted-foreground">
-                "Budget Analysis" is 2 days overdue
-              </p>
-            </div>
-          </DropdownMenuItem>
+          )}
+
           <DropdownMenuSeparator />
-          <DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push('/dashboard/notifications')} className="justify-center">
             <Button variant="link" size="sm" className="w-full p-0 h-auto">
               View all notifications
             </Button>

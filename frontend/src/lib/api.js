@@ -624,6 +624,60 @@ export const initiatives = {
     })
 
     return await handleResponse(response)
+  },
+
+  // ============================================
+  // SUB-TASKS
+  // ============================================
+
+  /**
+   * Get all sub-tasks for an initiative
+   * @param {string} initiativeId - Initiative ID
+   * @returns {Promise<Array>} List of sub-tasks
+   */
+  async getSubTasks(initiativeId) {
+    return GET(`/api/initiatives/${initiativeId}/subtasks`)
+  },
+
+  /**
+   * Create a new sub-task for an initiative
+   * @param {string} initiativeId - Initiative ID
+   * @param {Object} subTask - Sub-task data {title, description}
+   * @returns {Promise<Object>} Created sub-task
+   */
+  async createSubTask(initiativeId, subTask) {
+    return POST(`/api/initiatives/${initiativeId}/subtasks`, subTask)
+  },
+
+  /**
+   * Update a sub-task
+   * @param {string} initiativeId - Initiative ID
+   * @param {string} subTaskId - Sub-task ID
+   * @param {Object} subTask - Updated sub-task data {title?, description?, status?}
+   * @returns {Promise<Object>} Updated sub-task
+   */
+  async updateSubTask(initiativeId, subTaskId, subTask) {
+    return PUT(`/api/initiatives/${initiativeId}/subtasks/${subTaskId}`, subTask)
+  },
+
+  /**
+   * Delete a sub-task
+   * @param {string} initiativeId - Initiative ID
+   * @param {string} subTaskId - Sub-task ID
+   * @returns {Promise<Object>} Deletion response
+   */
+  async deleteSubTask(initiativeId, subTaskId) {
+    return DELETE(`/api/initiatives/${initiativeId}/subtasks/${subTaskId}`)
+  },
+
+  /**
+   * Reorder sub-tasks
+   * @param {string} initiativeId - Initiative ID
+   * @param {Array<string>} subTaskIds - Array of sub-task IDs in new order
+   * @returns {Promise<Array>} Reordered sub-tasks
+   */
+  async reorderSubTasks(initiativeId, subTaskIds) {
+    return POST(`/api/initiatives/${initiativeId}/subtasks/reorder`, { subtask_ids: subTaskIds })
   }
 }
 
@@ -1221,6 +1275,74 @@ export const organizations = {
    */
   async getStats() {
     return GET('/api/organization/stats')
+  }
+}
+
+/**
+ * Notifications API
+ */
+export const notifications = {
+  /**
+   * Get user notifications with pagination and filtering
+   * @param {Object} params - Query parameters
+   * @param {number} params.skip - Number of items to skip
+   * @param {number} params.limit - Number of items to return
+   * @param {boolean} params.unread_only - Filter for unread notifications only
+   * @param {string} params.notification_type - Filter by notification type
+   * @param {string} params.priority - Filter by priority
+   * @returns {Promise<Object>} Notification list response
+   */
+  async getAll(params = {}) {
+    const queryParams = new URLSearchParams()
+    if (params.skip !== undefined) queryParams.append('skip', params.skip)
+    if (params.limit !== undefined) queryParams.append('limit', params.limit)
+    if (params.unread_only) queryParams.append('unread_only', 'true')
+    if (params.notification_type) queryParams.append('notification_type', params.notification_type)
+    if (params.priority) queryParams.append('priority', params.priority)
+
+    return GET(`/api/notifications?${queryParams.toString()}`)
+  },
+
+  /**
+   * Get notification statistics
+   * @returns {Promise<Object>} Notification stats
+   */
+  async getStats() {
+    return GET('/api/notifications/stats')
+  },
+
+  /**
+   * Mark a notification as read
+   * @param {string} id - Notification ID
+   * @returns {Promise<Object>} Updated notification
+   */
+  async markAsRead(id) {
+    return PUT(`/api/notifications/${id}/read`)
+  },
+
+  /**
+   * Mark all notifications as read
+   * @returns {Promise<Object>} Response message
+   */
+  async markAllAsRead() {
+    return PUT('/api/notifications/mark-all-read')
+  },
+
+  /**
+   * Delete a notification
+   * @param {string} id - Notification ID
+   * @returns {Promise<Object>} Deletion response
+   */
+  async delete(id) {
+    return DELETE(`/api/notifications/${id}`)
+  },
+
+  /**
+   * Get WebSocket connection stats (for debugging)
+   * @returns {Promise<Object>} Connection statistics
+   */
+  async getConnectionStats() {
+    return GET('/api/notifications/connection-stats')
   }
 }
 

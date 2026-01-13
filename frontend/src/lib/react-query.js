@@ -93,7 +93,7 @@ export { queryClient }
 
 // Custom hooks for API calls
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { auth, users, organizations, roles, goals, initiatives, tasks } from './api'
+import { auth, users, organizations, roles, goals, initiatives, tasks, notifications } from './api'
 
 // Query keys
 export const QUERY_KEYS = {
@@ -124,6 +124,12 @@ export const QUERY_KEYS = {
   INITIATIVES: ['initiatives'],
   INITIATIVE: (id) => ['initiatives', id],
   INITIATIVE_SUBMISSIONS: (id) => ['initiatives', id, 'submissions'],
+  INITIATIVE_SUBTASKS: (id) => ['initiatives', id, 'subtasks'],
+
+  // Notifications
+  NOTIFICATIONS: ['notifications'],
+  NOTIFICATION_STATS: ['notifications', 'stats'],
+
   // Backward compatibility aliases
   TASKS: ['initiatives'],
   TASK: (id) => ['initiatives', id],
@@ -754,3 +760,124 @@ export const useReviewTask = useReviewInitiative
 export const useRequestTaskExtension = useRequestInitiativeExtension
 export const useHandleTaskExtension = useHandleInitiativeExtension
 export const useDeleteTask = useDeleteInitiative
+
+// ============================================
+// INITIATIVE SUB-TASKS
+// ============================================
+
+export function useInitiativeSubTasks(initiativeId) {
+  return useQuery({
+    queryKey: QUERY_KEYS.INITIATIVE_SUBTASKS(initiativeId),
+    queryFn: () => initiatives.getSubTasks(initiativeId),
+    enabled: !!initiativeId,
+  })
+}
+
+export function useCreateSubTask() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ initiativeId, subTask }) => initiatives.createSubTask(initiativeId, subTask),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVE_SUBTASKS(variables.initiativeId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVE(variables.initiativeId) })
+      toast.success('Sub-task created successfully')
+    },
+  })
+}
+
+export function useUpdateSubTask() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ initiativeId, subTaskId, subTask }) =>
+      initiatives.updateSubTask(initiativeId, subTaskId, subTask),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVE_SUBTASKS(variables.initiativeId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVE(variables.initiativeId) })
+      toast.success('Sub-task updated successfully')
+    },
+  })
+}
+
+export function useDeleteSubTask() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ initiativeId, subTaskId }) => initiatives.deleteSubTask(initiativeId, subTaskId),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVE_SUBTASKS(variables.initiativeId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVE(variables.initiativeId) })
+      toast.success('Sub-task deleted successfully')
+    },
+  })
+}
+
+export function useReorderSubTasks() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ initiativeId, subTaskIds }) => initiatives.reorderSubTasks(initiativeId, subTaskIds),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.INITIATIVE_SUBTASKS(variables.initiativeId) })
+      toast.success('Sub-tasks reordered successfully')
+    },
+  })
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+export function useNotificationsQuery(params = {}) {
+  return useQuery({
+    queryKey: [...QUERY_KEYS.NOTIFICATIONS, params],
+    queryFn: () => notifications.getAll(params),
+  })
+}
+
+export function useNotificationStats() {
+  return useQuery({
+    queryKey: QUERY_KEYS.NOTIFICATION_STATS,
+    queryFn: notifications.getStats,
+    refetchInterval: 60000, // Refresh every minute
+  })
+}
+
+export function useMarkNotificationAsRead() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: notifications.markAsRead,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTIFICATIONS })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTIFICATION_STATS })
+    },
+  })
+}
+
+export function useMarkAllNotificationsAsRead() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: notifications.markAllAsRead,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTIFICATIONS })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTIFICATION_STATS })
+      toast.success('All notifications marked as read')
+    },
+  })
+}
+
+export function useDeleteNotification() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: notifications.delete,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTIFICATIONS })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTIFICATION_STATS })
+      toast.success('Notification deleted')
+    },
+  })
+}

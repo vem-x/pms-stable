@@ -220,3 +220,37 @@ class InitiativeStats(BaseModel):
     pending_approval: int
     average_score: Optional[float] = None
     completion_rate: float
+
+# Sub-task Schemas
+
+class SubTaskBase(BaseModel):
+    """Base schema for sub-tasks"""
+    title: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+
+class SubTaskCreate(SubTaskBase):
+    """Create sub-task schema"""
+    pass
+
+class SubTaskUpdate(BaseModel):
+    """Update sub-task schema"""
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    status: Optional[str] = Field(None, pattern="^(pending|completed)$")
+
+class SubTask(SubTaskBase):
+    """Sub-task response schema"""
+    id: uuid.UUID
+    status: str
+    sequence_order: int
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    initiative_id: uuid.UUID
+    created_by: uuid.UUID
+
+    class Config:
+        from_attributes = True
+
+class SubTaskReorder(BaseModel):
+    """Reorder sub-tasks schema"""
+    subtask_ids: List[uuid.UUID] = Field(..., min_items=1)

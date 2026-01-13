@@ -312,18 +312,88 @@ class NotificationService:
 
     def notify_initiative_overdue(self, initiative: Initiative, stakeholders: List[User]):
         """Notify stakeholders when task becomes overdue"""
-        # TODO: Implement overdue notification email
-        print(f"Task {initiative.title} is overdue")
+        try:
+            due_date = initiative.due_date.strftime("%B %d, %Y at %I:%M %p") if initiative.due_date else "Not specified"
+
+            for stakeholder in stakeholders:
+                if stakeholder.email and stakeholder.status == 'active':
+                    # Determine if this stakeholder is a supervisor
+                    is_supervisor = (stakeholder.id == initiative.created_by)
+
+                    try:
+                        self.email_service.send_initiative_overdue_email(
+                            user_email=stakeholder.email,
+                            user_name=stakeholder.name or stakeholder.email,
+                            initiative_title=initiative.title,
+                            initiative_id=str(initiative.id),
+                            due_date=due_date,
+                            is_supervisor=is_supervisor
+                        )
+                        print(f"✓ Initiative overdue email sent to {stakeholder.email}")
+                    except Exception as e:
+                        print(f"✗ Failed to send initiative overdue email to {stakeholder.email}: {e}")
+        except Exception as e:
+            print(f"Error in notify_initiative_overdue: {e}")
 
     def notify_extension_requested(self, initiative: Initiative, extension: InitiativeExtension):
         """Notify initiative creator when extension is requested"""
-        # TODO: Implement extension request notification
-        print(f"Extension requested for initiative {initiative.title}")
+        try:
+            creator = self.db.query(User).filter(User.id == initiative.created_by).first()
+            requester = self.db.query(User).filter(User.id == extension.requested_by).first()
+
+            if creator and creator.email and creator.status == 'active' and requester:
+                new_due_date = extension.new_due_date.strftime("%B %d, %Y at %I:%M %p") if extension.new_due_date else "Not specified"
+
+                try:
+                    self.email_service.send_extension_request_email(
+                        supervisor_email=creator.email,
+                        supervisor_name=creator.name or creator.email,
+                        requester_name=requester.name or requester.email,
+                        initiative_title=initiative.title,
+                        initiative_id=str(initiative.id),
+                        new_due_date=new_due_date,
+                        reason=extension.reason
+                    )
+                    print(f"✓ Extension request email sent to {creator.email}")
+                except Exception as e:
+                    print(f"✗ Failed to send extension request email: {e}")
+        except Exception as e:
+            print(f"Error in notify_extension_requested: {e}")
 
     def notify_extension_reviewed(self, extension: InitiativeExtension, approved: bool):
         """Notify requester when extension is reviewed"""
-        # TODO: Implement extension review notification
-        print(f"Extension {'approved' if approved else 'denied'}")
+        try:
+            requester = self.db.query(User).filter(User.id == extension.requested_by).first()
+            initiative = self.db.query(Initiative).filter(Initiative.id == extension.initiative_id).first()
+
+            if requester and requester.email and requester.status == 'active' and initiative:
+                new_due_date = extension.new_due_date.strftime("%B %d, %Y at %I:%M %p") if extension.new_due_date else "Not specified"
+
+                try:
+                    if approved:
+                        self.email_service.send_extension_approved_email(
+                            user_email=requester.email,
+                            user_name=requester.name or requester.email,
+                            initiative_title=initiative.title,
+                            initiative_id=str(initiative.id),
+                            new_due_date=new_due_date
+                        )
+                        print(f"✓ Extension approved email sent to {requester.email}")
+                    else:
+                        # Extension denied - use reason from extension record
+                        denial_reason = extension.reason if hasattr(extension, 'denial_reason') else extension.reason
+                        self.email_service.send_extension_denied_email(
+                            user_email=requester.email,
+                            user_name=requester.name or requester.email,
+                            initiative_title=initiative.title,
+                            initiative_id=str(initiative.id),
+                            denial_reason=denial_reason
+                        )
+                        print(f"✓ Extension denied email sent to {requester.email}")
+                except Exception as e:
+                    print(f"✗ Failed to send extension review email: {e}")
+        except Exception as e:
+            print(f"Error in notify_extension_reviewed: {e}")
 
     # Goal-related notifications
 
@@ -343,6 +413,28 @@ class NotificationService:
                 data={"goal_id": str(goal.id)},
                 triggered_by=created_by.id
             )
+
+            # Send email to supervisor
+            supervisor = self.db.query(User).filter(User.id == created_by.supervisor_id).first()
+            if supervisor and supervisor.email and supervisor.status == 'active':
+                try:
+                    # Extract quarter and year from goal if available
+                    quarter = getattr(goal, 'quarter', None)
+                    year = getattr(goal, 'year', None)
+
+                    self.email_service.send_goal_approval_request_email(
+                        supervisor_email=supervisor.email,
+                        supervisor_name=supervisor.name or supervisor.email,
+                        creator_name=created_by.name or created_by.email,
+                        goal_title=goal.title,
+                        goal_id=str(goal.id),
+                        goal_type=goal.type.value,
+                        quarter=quarter,
+                        year=year
+                    )
+                    print(f"✓ Goal approval request email sent to {supervisor.email}")
+                except Exception as e:
+                    print(f"✗ Failed to send goal approval request email: {e}")
 
     def notify_goal_assigned(self, goal: Goal, assigned_by: User, assigned_to: User):
         """Notify when supervisor assigns a goal to supervisee"""
@@ -370,6 +462,20 @@ class NotificationService:
             triggered_by=approved_by.id
         )
 
+        # Send email to goal owner
+        if goal_owner.email and goal_owner.status == 'active':
+            try:
+                self.email_service.send_goal_approved_email(
+                    user_email=goal_owner.email,
+                    user_name=goal_owner.name or goal_owner.email,
+                    goal_title=goal.title,
+                    goal_id=str(goal.id),
+                    approved_by_name=approved_by.name or approved_by.email
+                )
+                print(f"✓ Goal approved email sent to {goal_owner.email}")
+            except Exception as e:
+                print(f"✗ Failed to send goal approved email: {e}")
+
     def notify_goal_rejected(self, goal: Goal, rejected_by: User, goal_owner: User, reason: str):
         """Notify when supervisor rejects a personal goal"""
         self.create_notification(
@@ -382,6 +488,21 @@ class NotificationService:
             data={"goal_id": str(goal.id), "reason": reason},
             triggered_by=rejected_by.id
         )
+
+        # Send email to goal owner
+        if goal_owner.email and goal_owner.status == 'active':
+            try:
+                self.email_service.send_goal_rejected_email(
+                    user_email=goal_owner.email,
+                    user_name=goal_owner.name or goal_owner.email,
+                    goal_title=goal.title,
+                    goal_id=str(goal.id),
+                    rejected_by_name=rejected_by.name or rejected_by.email,
+                    rejection_reason=reason
+                )
+                print(f"✓ Goal rejected email sent to {goal_owner.email}")
+            except Exception as e:
+                print(f"✗ Failed to send goal rejected email: {e}")
 
     def notify_goal_accepted(self, goal: Goal, accepted_by: User, assigned_by: User):
         """Notify supervisor when supervisee accepts assigned goal"""

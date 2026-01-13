@@ -5,10 +5,11 @@ from enum import Enum
 import uuid
 
 class OrganizationLevel(str, Enum):
-    GLOBAL = "global"
-    DIRECTORATE = "directorate"
-    DEPARTMENT = "department"
-    UNIT = "unit"
+    GLOBAL = "GLOBAL"
+    DIRECTORATE = "DIRECTORATE"
+    DEPARTMENT = "DEPARTMENT"
+    DIVISION = "DIVISION"
+    UNIT = "UNIT"
 
 class OrganizationBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)

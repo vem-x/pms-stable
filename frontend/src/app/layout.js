@@ -2,6 +2,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "../lib/auth-context";
 import { ReactQueryProvider } from "../lib/react-query";
+import { NotificationProvider } from "../lib/notification-context";
 import { Toaster } from "sonner";
 
 const geistSans = Geist({
@@ -27,13 +28,15 @@ export default function RootLayout({ children }) {
       >
         <ReactQueryProvider>
           <AuthProvider>
-            {children}
-            <Toaster
-              position="top-right"
-              toastOptions={{
-                duration: 4000,
-              }}
-            />
+            <NotificationProvider>
+              {children}
+              <Toaster
+                position="top-right"
+                toastOptions={{
+                  duration: 4000,
+                }}
+              />
+            </NotificationProvider>
           </AuthProvider>
         </ReactQueryProvider>
       </body>

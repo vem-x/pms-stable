@@ -40,24 +40,26 @@ import {
 } from "@/lib/react-query"
 
 const levelColors = {
-  global: "bg-blue-100 text-blue-800",
-  directorate: "bg-green-100 text-green-800",
-  department: "bg-orange-100 text-orange-800",
-  unit: "bg-gray-100 text-gray-800"
+  GLOBAL: "bg-blue-100 text-blue-800",
+  DIRECTORATE: "bg-green-100 text-green-800",
+  DEPARTMENT: "bg-orange-100 text-orange-800",
+  DIVISION: "bg-purple-100 text-purple-800",
+  UNIT: "bg-gray-100 text-gray-800"
 }
 
 const levelLabels = {
-  global: "Global",
-  directorate: "Directorate",
-  department: "Department",
-  unit: "Unit"
+  GLOBAL: "Global",
+  DIRECTORATE: "Directorate",
+  DEPARTMENT: "Department",
+  DIVISION: "Division",
+  UNIT: "Unit"
 }
 
 function OrganizationForm({ organization, isOpen, onClose, onSubmit }) {
   const [formData, setFormData] = useState({
     name: organization?.name || "",
     description: organization?.description || "",
-    level: organization?.level || "directorate",
+    level: organization?.level || "DIRECTORATE",
     parent_id: organization?.parent_id || ""
   })
 
@@ -72,10 +74,12 @@ function OrganizationForm({ organization, isOpen, onClose, onSubmit }) {
   const organizationsArray = Array.isArray(organizations) ? organizations : []
   const parentOptions = organizationsArray.filter(org => {
     const currentLevel = formData.level
-    if (currentLevel === 'global') return false
-    if (currentLevel === 'directorate') return org.level === 'global'
-    if (currentLevel === 'department') return org.level === 'directorate'
-    if (currentLevel === 'unit') return org.level === 'department'
+    // 5-level hierarchy: Global → Directorate → Department → Division → Unit
+    if (currentLevel === 'GLOBAL') return false
+    if (currentLevel === 'DIRECTORATE') return org.level === 'GLOBAL'
+    if (currentLevel === 'DEPARTMENT') return org.level === 'DIRECTORATE'
+    if (currentLevel === 'DIVISION') return org.level === 'DEPARTMENT'
+    if (currentLevel === 'UNIT') return org.level === 'DIVISION'
     return false
   })
 
@@ -117,15 +121,16 @@ function OrganizationForm({ organization, isOpen, onClose, onSubmit }) {
                   <SelectValue placeholder="Select level" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="global">Global</SelectItem>
-                  <SelectItem value="directorate">Directorate</SelectItem>
-                  <SelectItem value="department">Department</SelectItem>
-                  <SelectItem value="unit">Unit</SelectItem>
+                  <SelectItem value="GLOBAL">Global</SelectItem>
+                  <SelectItem value="DIRECTORATE">Directorate</SelectItem>
+                  <SelectItem value="DEPARTMENT">Department</SelectItem>
+                  <SelectItem value="DIVISION">Division</SelectItem>
+                  <SelectItem value="UNIT">Unit</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {formData.level !== 'global' && (
+            {formData.level !== 'GLOBAL' && (
               <div className="grid gap-2">
                 <Label htmlFor="parent">Parent Organization</Label>
                 <Select
@@ -278,10 +283,11 @@ export default function OrganizationPage() {
   })
 
   const organizationsByLevel = {
-    global: filteredOrganizations.filter(org => org.level === 'global'),
-    directorate: filteredOrganizations.filter(org => org.level === 'directorate'),
-    department: filteredOrganizations.filter(org => org.level === 'department'),
-    unit: filteredOrganizations.filter(org => org.level === 'unit'),
+    GLOBAL: filteredOrganizations.filter(org => org.level === 'GLOBAL'),
+    DIRECTORATE: filteredOrganizations.filter(org => org.level === 'DIRECTORATE'),
+    DEPARTMENT: filteredOrganizations.filter(org => org.level === 'DEPARTMENT'),
+    DIVISION: filteredOrganizations.filter(org => org.level === 'DIVISION'),
+    UNIT: filteredOrganizations.filter(org => org.level === 'UNIT'),
   }
 
   return (

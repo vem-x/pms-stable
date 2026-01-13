@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { Plus, CheckSquare, Calendar, User, Users, MoreHorizontal, Edit, Trash2, Eye, FileText, Clock, Star, Search, Filter, X, Check, ChevronsUpDown, Download } from "lucide-react"
+import { SubTaskList } from "@/components/initiatives/SubTaskList"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -803,177 +804,201 @@ function InitiativeSubmissionDialog({ initiative, isOpen, onClose, onSubmit }) {
 }
 
 function InitiativeReviewDialog({ initiative, isOpen, onClose, onSubmit }) {
-  const [reviewMode, setReviewMode] = useState(null) // null, 'approve', or 'redo'
   const [formData, setFormData] = useState({
     score: 7,
     feedback: "",
     approved: true
   })
+  const [submission, setSubmission] = useState(null)
+  const [loadingSubmission, setLoadingSubmission] = useState(false)
 
-  // Reset when dialog opens/closes
+  // Fetch submission when dialog opens
   useEffect(() => {
+    const fetchSubmission = async () => {
+      if (isOpen && initiative?.id) {
+        setLoadingSubmission(true)
+        try {
+          const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+          const response = await fetch(`${API_URL}/api/initiatives/${initiative.id}/submission`)
+          if (response.ok) {
+            const data = await response.json()
+            setSubmission(data)
+          }
+        } catch (error) {
+          console.error('Error fetching submission:', error)
+        } finally {
+          setLoadingSubmission(false)
+        }
+      }
+    }
+
     if (isOpen) {
-      setReviewMode(null)
       setFormData({
         score: 7,
         feedback: "",
         approved: true
       })
+      fetchSubmission()
+    } else {
+      setSubmission(null)
     }
-  }, [isOpen])
+  }, [isOpen, initiative?.id])
 
   const handleApprove = () => {
-    setReviewMode('approve')
-    setFormData({ ...formData, approved: true })
+    if (!formData.score || formData.score < 1 || formData.score > 10) {
+      alert('Please select a valid grade between 1 and 10')
+      return
+    }
+
+    onSubmit({ ...formData, approved: true })
+    onClose()
   }
 
-  const handleRedo = () => {
-    setReviewMode('redo')
-    setFormData({ ...formData, approved: false })
-  }
-
-  const handleSubmit = (e) => {
-    e.preventDefault()
-
-    // Validate feedback is required for redo
-    if (reviewMode === 'redo' && (!formData.feedback || formData.feedback.trim() === '')) {
+  const handleReject = () => {
+    if (!formData.feedback || formData.feedback.trim() === '') {
       alert('Redo instructions are required. Please explain what needs to be changed.')
       return
     }
 
-    onSubmit(formData)
+    onSubmit({ ...formData, approved: false })
     onClose()
-    setReviewMode(null)
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px]">
-        {reviewMode === null ? (
-          /* Initial Choice Screen */
-          <div>
-            <DialogHeader>
-              <DialogTitle>Review Initiative</DialogTitle>
-              <DialogDescription>
-                How would you like to proceed with &ldquo;{initiative?.title}&rdquo;?
-              </DialogDescription>
-            </DialogHeader>
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh]">
+        <DialogHeader>
+          <DialogTitle>Review Initiative</DialogTitle>
+          <DialogDescription>
+            Review the submission and provide feedback
+          </DialogDescription>
+        </DialogHeader>
 
-            <div className="grid gap-4 py-6">
-              <Button
-                onClick={handleApprove}
-                size="lg"
-                className="h-auto py-6 flex flex-col items-center gap-2"
-              >
-                <Check className="h-8 w-8" />
-                <div>
-                  <div className="font-semibold text-lg">Approve & Grade</div>
-                  <div className="text-xs font-normal opacity-90">Work meets requirements</div>
-                </div>
-              </Button>
-
-              <Button
-                onClick={handleRedo}
-                variant="destructive"
-                size="lg"
-                className="h-auto py-6 flex flex-col items-center gap-2"
-              >
-                <X className="h-8 w-8" />
-                <div>
-                  <div className="font-semibold text-lg">Request Redo</div>
-                  <div className="text-xs font-normal opacity-90">Work needs improvements</div>
-                </div>
-              </Button>
+        <ScrollArea className="max-h-[60vh] pr-4">
+          <div className="space-y-6 py-4">
+            {/* Initiative Title */}
+            <div>
+              <h3 className="font-semibold text-lg">{initiative?.title}</h3>
+              <p className="text-sm text-muted-foreground">{initiative?.description}</p>
             </div>
 
-            <DialogFooter>
-              <Button variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-            </DialogFooter>
-          </div>
-        ) : (
-          /* Approval or Redo Form */
-          <form onSubmit={handleSubmit}>
-            <DialogHeader>
-              <DialogTitle>
-                {reviewMode === 'approve' ? 'Approve & Grade Initiative' : 'Request Redo'}
-              </DialogTitle>
-              <DialogDescription>
-                {reviewMode === 'approve'
-                  ? 'Provide a grade and optional feedback'
-                  : 'Explain what needs to be improved'}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="grid gap-4 py-4">
-              {reviewMode === 'approve' && (
-                <div className="grid gap-2">
-                  <Label htmlFor="score">Grade (1-10) *</Label>
-                  <Select
-                    value={formData.score.toString()}
-                    onValueChange={(value) => setFormData({ ...formData, score: parseInt(value) })}
-                    required
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select grade" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[...Array(10)].map((_, i) => (
-                        <SelectItem key={i + 1} value={(i + 1).toString()}>
-                          {i + 1} - {i < 3 ? 'Poor' : i < 6 ? 'Fair' : i < 8 ? 'Good' : 'Excellent'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">Rate the quality and completion of the work</p>
+            {/* Submission Report */}
+            {loadingSubmission ? (
+              <div className="text-sm text-muted-foreground">Loading submission...</div>
+            ) : submission ? (
+              <div className="border-2 border-purple-200 rounded-lg p-4 bg-purple-50">
+                <h4 className="font-semibold mb-3 text-purple-900">Completion Report</h4>
+                <div className="p-3 bg-white border rounded-lg prose prose-sm max-w-none">
+                  <div dangerouslySetInnerHTML={{ __html: submission.report }} />
                 </div>
-              )}
+                <p className="text-xs text-muted-foreground mt-2">
+                  Submitted by {submission.submitter_name} on {new Date(submission.submitted_at).toLocaleString()}
+                </p>
+
+                {/* Submitted Documents */}
+                {submission.documents && submission.documents.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="font-medium text-sm mb-2 text-purple-900">Submitted Documents ({submission.documents.length})</h4>
+                    <div className="space-y-2">
+                      {submission.documents.map((doc) => (
+                        <div key={doc.id} className="flex items-center gap-3 p-2 bg-white border rounded-lg hover:bg-muted/50">
+                          <FileText className="h-4 w-4 text-purple-600" />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">{doc.file_name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Uploaded {new Date(doc.uploaded_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+                              const url = `${API_URL}/api/initiatives/documents/${doc.id}/download`
+                              const link = document.createElement('a')
+                              link.href = url
+                              link.download = doc.file_name
+                              link.target = '_blank'
+                              document.body.appendChild(link)
+                              link.click()
+                              document.body.removeChild(link)
+                            }}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No submission details available</p>
+            )}
+
+            <Separator />
+
+            {/* Review Form */}
+            <div className="space-y-4">
+              <div className="grid gap-2">
+                <Label htmlFor="score">Grade (1-10) *</Label>
+                <Select
+                  value={formData.score.toString()}
+                  onValueChange={(value) => setFormData({ ...formData, score: parseInt(value) })}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select grade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[...Array(10)].map((_, i) => (
+                      <SelectItem key={i + 1} value={(i + 1).toString()}>
+                        {i + 1} - {i < 3 ? 'Poor' : i < 6 ? 'Fair' : i < 8 ? 'Good' : 'Excellent'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Rate the quality and completion of the work</p>
+              </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="feedback">
-                  {reviewMode === 'approve' ? 'Feedback (Optional)' : 'Redo Instructions *'}
+                  Feedback
                 </Label>
                 <Textarea
                   id="feedback"
                   value={formData.feedback}
                   onChange={(e) => setFormData({ ...formData, feedback: e.target.value })}
-                  placeholder={reviewMode === 'approve'
-                    ? "Provide feedback on the work quality, what was done well, suggestions for future work..."
-                    : "Be specific: What needs to be changed? Why? What are your expectations?"
-                  }
-                  rows={6}
-                  className="min-h-[150px]"
-                  required={reviewMode === 'redo'}
+                  placeholder="Provide feedback on the work quality, what was done well, or what needs to be improved..."
+                  rows={5}
+                  className="min-h-[120px]"
                 />
-                {reviewMode === 'redo' && (
-                  <p className="text-xs text-red-600 font-medium">
-                    Required: Be clear and specific about what needs to be redone
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  Feedback is optional for approval, but required if rejecting
+                </p>
               </div>
             </div>
+          </div>
+        </ScrollArea>
 
-            <DialogFooter className="gap-2">
-              <Button variant="outline" type="button" onClick={() => setReviewMode(null)}>
-                Back
-              </Button>
-              <Button type="submit" variant={reviewMode === 'approve' ? 'default' : 'destructive'}>
-                {reviewMode === 'approve' ? (
-                  <>
-                    <Check className="mr-2 h-4 w-4" />
-                    Approve Initiative
-                  </>
-                ) : (
-                  <>
-                    <X className="mr-2 h-4 w-4" />
-                    Send for Redo
-                  </>
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        )}
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleReject}
+          >
+            <X className="mr-2 h-4 w-4" />
+            Reject
+          </Button>
+          <Button
+            onClick={handleApprove}
+          >
+            <Check className="mr-2 h-4 w-4" />
+            Accept & Grade
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -1168,6 +1193,14 @@ function InitiativeDetailModal({ initiative, isOpen, onClose, onEdit, onDelete, 
                 )}
               </div>
             </div>
+
+            <Separator />
+
+            {/* Sub-Tasks */}
+            <SubTaskList
+              initiativeId={initiative.id}
+              initiativeStatus={initiative.status}
+            />
 
             <Separator />
 

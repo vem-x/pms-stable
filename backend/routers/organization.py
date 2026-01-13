@@ -122,12 +122,13 @@ async def create_organization(
         if not permission_service.user_can_access_organization(user, parent.id):
             raise HTTPException(status_code=403, detail="Cannot create organization under inaccessible parent")
 
-        # Validate level hierarchy
+        # Validate level hierarchy (5 levels: Global → Directorate → Department → Division → Unit)
         level_order = {
             OrganizationLevel.GLOBAL: 0,
             OrganizationLevel.DIRECTORATE: 1,
             OrganizationLevel.DEPARTMENT: 2,
-            OrganizationLevel.UNIT: 3
+            OrganizationLevel.DIVISION: 3,  # NEW
+            OrganizationLevel.UNIT: 4  # Updated from 3 to 4
         }
 
         if level_order[organization_data.level] != level_order[parent.level] + 1:

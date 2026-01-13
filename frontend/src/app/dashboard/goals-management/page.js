@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import {
   Plus,
   Target,
@@ -17,7 +17,9 @@ import {
   MoreHorizontal,
   FileText,
   Shield,
-  Users
+  Users,
+  Search,
+  X
 } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -44,6 +46,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import { useAuth, usePermission } from "@/lib/auth-context"
 import {
   useGoals,
@@ -548,6 +551,9 @@ export default function GoalsManagementPage() {
   const [editingGoal, setEditingGoal] = useState(null)
   const [updatingGoal, setUpdatingGoal] = useState(null)
   const [activeTab, setActiveTab] = useState("goals")
+  const [searchTerm, setSearchTerm] = useState("")
+  const [yearFilter, setYearFilter] = useState("all")
+  const [quarterFilter, setQuarterFilter] = useState("all")
 
   const { user } = useAuth()
   const canCreateYearly = usePermission("goal_create_yearly")
@@ -580,7 +586,48 @@ export default function GoalsManagementPage() {
     )
   }
 
-  const organizationalGoals = goals.filter((g) => g.type === "YEARLY" || g.type === "QUARTERLY")
+  // Generate year range from 2025 to current year + 2
+  const currentYear = new Date().getFullYear()
+  const startYear = 2025
+  const endYear = currentYear + 2 // e.g., if 2026, then up to 2028
+
+  const yearOptions = [
+    { value: "all", label: "All Years" },
+    ...Array.from({ length: endYear - startYear + 1 }, (_, i) => {
+      const year = (startYear + i).toString()
+      return { value: year, label: year }
+    }).reverse() // Show newest years first
+  ]
+
+  const quarterOptions = [
+    { value: "all", label: "All Quarters" },
+    { value: "Q1", label: "Q1 (Jan-Mar)" },
+    { value: "Q2", label: "Q2 (Apr-Jun)" },
+    { value: "Q3", label: "Q3 (Jul-Sep)" },
+    { value: "Q4", label: "Q4 (Oct-Dec)" }
+  ]
+
+  // Filter organizational goals
+  const organizationalGoals = useMemo(() => {
+    let filtered = goals.filter((g) => g.type === "YEARLY" || g.type === "QUARTERLY")
+
+    if (yearFilter !== "all") {
+      filtered = filtered.filter(g => g.year?.toString() === yearFilter)
+    }
+
+    if (quarterFilter !== "all") {
+      filtered = filtered.filter(g => g.quarter === quarterFilter)
+    }
+
+    if (searchTerm) {
+      filtered = filtered.filter(g =>
+        g.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        g.description?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+
+    return filtered
+  }, [goals, yearFilter, quarterFilter, searchTerm])
 
   const handleCreate = (data) => {
     createMutation.mutate({
@@ -659,14 +706,10 @@ export default function GoalsManagementPage() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full max-w-2xl grid-cols-3">
+        <TabsList className="grid w-full max-w-xl grid-cols-2">
           <TabsTrigger value="goals" className="flex items-center gap-2">
             <Target className="h-4 w-4" />
             Organizational Goals
-          </TabsTrigger>
-          <TabsTrigger value="freeze" className="flex items-center gap-2">
-            <Lock className="h-4 w-4" />
-            Freeze Management
           </TabsTrigger>
           <TabsTrigger value="logs" className="flex items-center gap-2">
             <History className="h-4 w-4" />
@@ -677,13 +720,85 @@ export default function GoalsManagementPage() {
         {/* Organizational Goals Tab */}
         <TabsContent value="goals" className="space-y-6">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-600">
-              Manage company-wide yearly and quarterly goals
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-gray-600">
+                Manage company-wide yearly and quarterly goals
+              </p>
+              {canFreezeGoals && (
+                <>
+                  <Button
+                    onClick={() => setIsFreezeOpen(true)}
+                    size="sm"
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Lock className="mr-2 h-4 w-4" />
+                    Freeze Goals
+                  </Button>
+
+                  <Button
+                    onClick={() => setIsUnfreezeOpen(true)}
+                    size="sm"
+                    variant="outline"
+                    className="border-orange-600 text-orange-600 hover:bg-orange-50"
+                  >
+                    <Unlock className="mr-2 h-4 w-4" />
+                    Unfreeze Goals
+                  </Button>
+                </>
+              )}
+            </div>
             {canCreateOrganizationalGoals && (
               <Button onClick={() => setIsFormOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Organizational Goal
+              </Button>
+            )}
+          </div>
+
+          {/* Search and Filters */}
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="relative flex-1 min-w-[250px]">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search goals..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+
+            <SearchableSelect
+              value={yearFilter}
+              onValueChange={setYearFilter}
+              options={yearOptions}
+              placeholder="Filter by year"
+              searchPlaceholder="Search year..."
+              emptyText="No years found."
+              className="w-[160px]"
+            />
+
+            <SearchableSelect
+              value={quarterFilter}
+              onValueChange={setQuarterFilter}
+              options={quarterOptions}
+              placeholder="Filter by quarter"
+              searchPlaceholder="Search quarter..."
+              emptyText="No quarters found."
+              className="w-[180px]"
+            />
+
+            {(searchTerm || yearFilter !== "all" || quarterFilter !== "all") && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSearchTerm("")
+                  setYearFilter("all")
+                  setQuarterFilter("all")
+                }}
+                className="whitespace-nowrap"
+              >
+                <X className="mr-2 h-4 w-4" />
+                Clear Filters
               </Button>
             )}
           </div>
@@ -723,74 +838,6 @@ export default function GoalsManagementPage() {
                       Create Goal
                     </Button>
                   )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Freeze Management Tab */}
-        <TabsContent value="freeze" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Freeze Individual Goals</CardTitle>
-              <CardDescription>
-                Freeze or unfreeze all individual goals for a specific quarter to prevent or allow editing
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <Card className="border-2 border-blue-200 bg-blue-50/50">
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Lock className="h-5 w-5 text-blue-600" />
-                      Freeze Goals
-                    </CardTitle>
-                    <CardDescription>
-                      Lock goals to prevent editing for a specific quarter
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Button
-                      onClick={() => setIsFreezeOpen(true)}
-                      disabled={!canFreezeGoals}
-                      className="w-full"
-                    >
-                      <Lock className="mr-2 h-4 w-4" />
-                      Freeze Quarter Goals
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-2 border-orange-200 bg-orange-50/50">
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Unlock className="h-5 w-5 text-orange-600" />
-                      Unfreeze Goals
-                    </CardTitle>
-                    <CardDescription>
-                      Unlock goals to allow editing again
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Button
-                      onClick={() => setIsUnfreezeOpen(true)}
-                      disabled={!canFreezeGoals}
-                      variant="outline"
-                      className="w-full"
-                    >
-                      <Unlock className="mr-2 h-4 w-4" />
-                      Unfreeze Quarter Goals
-                    </Button>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {!canFreezeGoals && (
-                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-sm text-yellow-800">
-                    You don&apos;t have permission to freeze or unfreeze goals. Contact your administrator.
-                  </p>
                 </div>
               )}
             </CardContent>

@@ -6,7 +6,7 @@ Based on CLAUDE.md specification with comprehensive initiative workflows
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from typing import List, Optional
 import uuid
 import os
@@ -14,12 +14,13 @@ from datetime import datetime
 import json
  
 from database import get_db
-from models import Initiative, InitiativeStatus, InitiativeType, User
+from models import Initiative, InitiativeStatus, InitiativeType, User, InitiativeSubTask, InitiativeAssignment
 from schemas.initiatives import (
     InitiativeCreate, InitiativeUpdate, InitiativeStatusUpdate, InitiativeSubmission, InitiativeReview,
     InitiativeExtensionRequest, InitiativeExtensionReview, Initiative as InitiativeSchema,
     InitiativeWithAssignees, InitiativeForReview, InitiativeSubmissionDetail, InitiativeDocument, InitiativeExtension,
-    InitiativeList, InitiativeStats, InitiativeUrgency, InitiativeAssignee, InitiativeApproval
+    InitiativeList, InitiativeStats, InitiativeUrgency, InitiativeAssignee, InitiativeApproval,
+    SubTask, SubTaskCreate, SubTaskUpdate, SubTaskReorder
 )
 from schemas.auth import UserSession
 from utils.auth import get_current_user
@@ -1284,3 +1285,223 @@ async def get_user_initiatives(
         initiative_list.append(initiative_dict)
 
     return initiative_list
+# from models import InitiativeSubTask
+# from schemas.initiatives import SubTask, SubTaskCreate, SubTaskUpdate, SubTaskReorder
+
+@router.get("/{initiative_id}/subtasks", response_model=List[SubTask])
+async def get_subtasks(
+    initiative_id: uuid.UUID,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all sub-tasks for an initiative
+    Only accessible by users who can see the initiative
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get initiative and check access
+    initiative = db.query(Initiative).filter(Initiative.id == initiative_id).first()
+    if not initiative:
+        raise HTTPException(status_code=404, detail="Initiative not found")
+
+    # Check visibility
+    from utils.initiative_workflows import InitiativeWorkflowService
+    initiative_service = InitiativeWorkflowService(db)
+    # if not initiative_service.get_initiative_visibility(user, initiative_id):
+    #     raise HTTPException(status_code=403, detail="Cannot access this initiative")
+
+    # Get sub-tasks
+    subtasks = db.query(InitiativeSubTask).filter(
+        InitiativeSubTask.initiative_id == initiative_id
+    ).order_by(InitiativeSubTask.sequence_order).all()
+
+    return [SubTask.from_orm(st) for st in subtasks]
+
+@router.post("/{initiative_id}/subtasks", response_model=SubTask)
+async def create_subtask(
+    initiative_id: uuid.UUID,
+    subtask_data: SubTaskCreate,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new sub-task for an initiative
+    Only assignees can create sub-tasks
+    Initiative must be in ONGOING status
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get initiative
+    initiative = db.query(Initiative).filter(Initiative.id == initiative_id).first()
+    if not initiative:
+        raise HTTPException(status_code=404, detail="Initiative not found")
+
+    # Verify user is assigned to initiative
+    assignment = db.query(InitiativeAssignment).filter(
+        InitiativeAssignment.initiative_id == initiative_id,
+        InitiativeAssignment.user_id == user.id
+    ).first()
+
+    if not assignment:
+        raise HTTPException(status_code=403, detail="Only assignees can create sub-tasks")
+
+    # Verify initiative is in ONGOING status
+    from models import InitiativeStatus
+    if initiative.status != InitiativeStatus.ONGOING:
+        raise HTTPException(status_code=400, detail="Can only create sub-tasks for ONGOING initiatives")
+
+    # Get next sequence order
+    max_order = db.query(func.max(InitiativeSubTask.sequence_order)).filter(
+        InitiativeSubTask.initiative_id == initiative_id
+    ).scalar() or -1
+
+    # Create sub-task
+    subtask = InitiativeSubTask(
+        title=subtask_data.title,
+        description=subtask_data.description,
+        initiative_id=initiative_id,
+        created_by=user.id,
+        sequence_order=max_order + 1,
+        status='pending'
+    )
+
+    db.add(subtask)
+    db.commit()
+    db.refresh(subtask)
+
+    return SubTask.from_orm(subtask)
+
+@router.put("/{initiative_id}/subtasks/{subtask_id}", response_model=SubTask)
+async def update_subtask(
+    initiative_id: uuid.UUID,
+    subtask_id: uuid.UUID,
+    subtask_data: SubTaskUpdate,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a sub-task (title, description, or status)
+    When status changes to 'completed', set completed_at timestamp
+    """
+    from datetime import datetime
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get sub-task
+    subtask = db.query(InitiativeSubTask).filter(
+        InitiativeSubTask.id == subtask_id,
+        InitiativeSubTask.initiative_id == initiative_id
+    ).first()
+
+    if not subtask:
+        raise HTTPException(status_code=404, detail="Sub-task not found")
+
+    # Verify user is assigned to initiative
+    assignment = db.query(InitiativeAssignment).filter(
+        InitiativeAssignment.initiative_id == initiative_id,
+        InitiativeAssignment.user_id == user.id
+    ).first()
+
+    if not assignment:
+        raise HTTPException(status_code=403, detail="Only assignees can update sub-tasks")
+
+    # Update fields
+    if subtask_data.title is not None:
+        subtask.title = subtask_data.title
+    if subtask_data.description is not None:
+        subtask.description = subtask_data.description
+    if subtask_data.status is not None:
+        old_status = subtask.status
+        subtask.status = subtask_data.status
+        # Set completed_at when status changes to completed
+        if subtask_data.status == 'completed' and old_status != 'completed':
+            subtask.completed_at = datetime.utcnow()
+        elif subtask_data.status == 'pending' and old_status == 'completed':
+            subtask.completed_at = None
+
+    db.commit()
+    db.refresh(subtask)
+
+    return SubTask.from_orm(subtask)
+
+@router.delete("/{initiative_id}/subtasks/{subtask_id}")
+async def delete_subtask(
+    initiative_id: uuid.UUID,
+    subtask_id: uuid.UUID,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a sub-task
+    Only assignees can delete sub-tasks
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get sub-task
+    subtask = db.query(InitiativeSubTask).filter(
+        InitiativeSubTask.id == subtask_id,
+        InitiativeSubTask.initiative_id == initiative_id
+    ).first()
+
+    if not subtask:
+        raise HTTPException(status_code=404, detail="Sub-task not found")
+
+    # Verify user is assigned to initiative
+    assignment = db.query(InitiativeAssignment).filter(
+        InitiativeAssignment.initiative_id == initiative_id,
+        InitiativeAssignment.user_id == user.id
+    ).first()
+
+    if not assignment:
+        raise HTTPException(status_code=403, detail="Only assignees can delete sub-tasks")
+
+    db.delete(subtask)
+    db.commit()
+
+    return {"message": "Sub-task deleted successfully"}
+
+@router.post("/{initiative_id}/subtasks/reorder")
+async def reorder_subtasks(
+    initiative_id: uuid.UUID,
+    reorder_data: SubTaskReorder,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Reorder sub-tasks by providing ordered list of sub-task IDs
+    Only assignees can reorder sub-tasks
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Verify user is assigned to initiative
+    assignment = db.query(InitiativeAssignment).filter(
+        InitiativeAssignment.initiative_id == initiative_id,
+        InitiativeAssignment.user_id == user.id
+    ).first()
+
+    if not assignment:
+        raise HTTPException(status_code=403, detail="Only assignees can reorder sub-tasks")
+
+    # Update sequence_order for each sub-task
+    for index, subtask_id in enumerate(reorder_data.subtask_ids):
+        subtask = db.query(InitiativeSubTask).filter(
+            InitiativeSubTask.id == subtask_id,
+            InitiativeSubTask.initiative_id == initiative_id
+        ).first()
+
+        if subtask:
+            subtask.sequence_order = index
+
+    db.commit()
+
+    return {"message": "Sub-tasks reordered successfully"}

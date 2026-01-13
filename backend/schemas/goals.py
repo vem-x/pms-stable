@@ -7,6 +7,7 @@ import uuid
 class GoalType(str, Enum):
     YEARLY = "YEARLY"
     QUARTERLY = "QUARTERLY"
+    DEPARTMENTAL = "DEPARTMENTAL"  # NEW: Department/Directorate-specific goals
     INDIVIDUAL = "INDIVIDUAL"
 
 class GoalStatus(str, Enum):
@@ -30,6 +31,7 @@ class GoalBase(BaseModel):
     end_date: Optional[date] = None
     quarter: Optional[Quarter] = None  # Required for INDIVIDUAL goals
     year: Optional[int] = None  # Required for INDIVIDUAL goals
+    organization_id: Optional[uuid.UUID] = None  # Required for DEPARTMENTAL goals
 
     @validator('start_date', 'end_date', pre=True)
     def empty_string_to_none(cls, v):
@@ -88,6 +90,7 @@ class GoalInDB(GoalBase):
     parent_goal_id: Optional[uuid.UUID] = None
     created_by: uuid.UUID
     owner_id: Optional[uuid.UUID] = None
+    organization_id: Optional[uuid.UUID] = None  # For DEPARTMENTAL goals
     frozen: bool = False
     frozen_at: Optional[datetime] = None
     frozen_by: Optional[uuid.UUID] = None
