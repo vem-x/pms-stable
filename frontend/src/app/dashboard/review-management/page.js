@@ -640,7 +640,9 @@ function TraitDialog({ open, onClose, onSubmit, initialType = 'value' }) {
 
   // Filter organizations based on scope type and convert to options
   useEffect(() => {
-    const filtered = organizations.filter(org => org.level === formData.scope_type)
+    const filtered = organizations.filter(org =>
+      org.level?.toUpperCase() === formData.scope_type?.toUpperCase()
+    )
     setFilteredOrganizations(filtered)
   }, [organizations, formData.scope_type])
 

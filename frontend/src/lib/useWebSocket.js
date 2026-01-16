@@ -4,7 +4,14 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useAuth } from './auth-context'
 import { tokenUtils } from './api'
 
-const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'
+// Clean up the WebSocket URL by removing any trailing paths
+const getWebSocketURL = () => {
+  const baseUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'
+  // Remove any trailing /ws, /api, or other paths to ensure clean base URL
+  return baseUrl.replace(/\/(ws|api).*$/, '')
+}
+
+const WEBSOCKET_URL = getWebSocketURL()
 
 export function useWebSocket() {
   const { user } = useAuth()
@@ -31,7 +38,9 @@ export function useWebSocket() {
         wsRef.current.close()
       }
 
-      const ws = new WebSocket(`${WEBSOCKET_URL}/api/notifications/ws?token=${token}`)
+      const wsUrl = `${WEBSOCKET_URL}/api/notifications/ws?token=${token}`
+      console.log('Connecting to WebSocket:', wsUrl)
+      const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
       ws.onopen = () => {

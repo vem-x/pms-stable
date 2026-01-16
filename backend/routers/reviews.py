@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_, desc, asc
 from typing import List, Optional, Dict, Any
 from database import get_db
-from models import User, ReviewCycle, Review, PeerReview, Initiative, InitiativeAssignment, Goal, Organization, ReviewTrait, ReviewQuestion, ReviewCycleTrait, ReviewAssignment, ReviewResponse as ReviewResponseModel, ReviewScore, PerformanceScore
+from models import User, ReviewCycle, Review, PeerReview, Initiative, InitiativeAssignment, Goal, Organization, ReviewTrait, ReviewQuestion, ReviewCycleTrait, ReviewAssignment, ReviewResponse as ReviewResponseModel, ReviewScore, PerformanceScore, ReviewCycleStatus
 from routers.auth import get_current_user
 from utils.permissions import UserPermissions
 from pydantic import BaseModel
@@ -178,7 +178,7 @@ async def create_review_cycle(
         period=cycle_data.period,
         start_date=cycle_data.start_date,
         end_date=cycle_data.end_date,
-        status="draft",
+        status=ReviewCycleStatus.DRAFT,
         phase_schedule=cycle_data.phase_schedule or {
             "setup": {"start": cycle_data.start_date.isoformat(), "duration": "1_week"},
             "reviews": {"start": (cycle_data.start_date + timedelta(weeks=1)).isoformat(), "duration": "3_weeks"},
