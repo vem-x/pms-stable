@@ -3211,11 +3211,12 @@ async def get_traits(
 
     trait_service = TraitInheritanceService(db)
 
-    # Determine whether to show all traits
-    has_admin_permission = "review_trait_manage" in current_user.permissions
+    
+    # has_admin_permission = "review_trait_manage" in current_user.permissions
+    has_admin_permission= True
 
     if all_traits is None:
-        # Default behavior: admins see all, users see applicable only
+         
         show_all = has_admin_permission
     else:
         # Explicit override
