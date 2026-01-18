@@ -123,7 +123,9 @@ function GoalCard({ goal, onEdit, onDelete, onUpdateProgress, onStatusChange, on
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <CardTitle className="text-lg font-semibold truncate">{goal.title}</CardTitle>
+                  <div className="w-full min-w-0">
+                    <CardTitle className="text-lg font-semibold truncate">{goal.title}</CardTitle>
+                  </div>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-md">
                   <p>{goal.title}</p>

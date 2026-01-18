@@ -102,11 +102,13 @@ function OrganizationalGoalCard({ goal, onEdit, onDelete, onUpdateProgress, onSt
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="space-y-2 flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <CardTitle className="text-lg font-semibold truncate">{goal.title}</CardTitle>
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-lg font-semibold truncate">{goal.title}</CardTitle>
+                    </div>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-md">
                     <p>{goal.title}</p>
