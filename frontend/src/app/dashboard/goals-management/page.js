@@ -96,66 +96,50 @@ function OrganizationalGoalCard({ goal, onEdit, onDelete, onUpdateProgress, onSt
 
   return (
     <Card
-      className="group hover:shadow-md transition-all duration-200 cursor-pointer"
+      className="relative hover:shadow-lg transition-shadow cursor-pointer group flex flex-col h-full"
       onClick={() => onViewDetails && onViewDetails(goal)}
     >
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="space-y-2 flex-1 min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="flex-1 min-w-0">
-                      <CardTitle className="text-lg font-semibold truncate">{goal.title}</CardTitle>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-md">
-                    <p>{goal.title}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              {goal.frozen && (
-                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300 shrink-0">
-                  <Lock className="h-3 w-3 mr-1" />
-                  Frozen
-                </Badge>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge className={`${statusColors[goal.status]} flex items-center gap-1.5`}>
-                {goal.status}
-              </Badge>
-            </div>
+      <CardHeader className="space-y-2 pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <CardTitle className="text-base leading-tight flex items-start gap-2">
+                    <TypeIcon className="h-4 w-4 text-gray-500 flex-shrink-0 mt-0.5" />
+                    <span className="line-clamp-2 break-words">{goal.title}</span>
+                  </CardTitle>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-sm">
+                  <p>{goal.title}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
+
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="opacity-0 group-hover:opacity-100"
-                onClick={(e) => e.stopPropagation()}
-              >
+            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onEdit(goal)} disabled={goal.frozen}>
+            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(goal); }} disabled={goal.frozen}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Goal
               </DropdownMenuItem>
               {goal.status === "ACTIVE" && (
                 <>
-                  <DropdownMenuItem onClick={() => onUpdateProgress(goal)} disabled={goal.frozen}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUpdateProgress(goal); }} disabled={goal.frozen}>
                     <FileText className="mr-2 h-4 w-4" />
                     Update Progress
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => onStatusChange(goal, "ACHIEVED")} disabled={goal.frozen}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusChange(goal, "ACHIEVED"); }} disabled={goal.frozen}>
                     <CheckCircle2 className="mr-2 h-4 w-4" />
                     Mark as Achieved
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onStatusChange(goal, "DISCARDED")} disabled={goal.frozen}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusChange(goal, "DISCARDED"); }} disabled={goal.frozen}>
                     <AlertCircle className="mr-2 h-4 w-4" />
                     Discard Goal
                   </DropdownMenuItem>
@@ -165,12 +149,12 @@ function OrganizationalGoalCard({ goal, onEdit, onDelete, onUpdateProgress, onSt
                 <>
                   <DropdownMenuSeparator />
                   {goal.frozen ? (
-                    <DropdownMenuItem onClick={() => onUnfreeze(goal)}>
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUnfreeze(goal); }}>
                       <Unlock className="mr-2 h-4 w-4" />
                       Unfreeze Goal
                     </DropdownMenuItem>
                   ) : (
-                    <DropdownMenuItem onClick={() => onFreeze(goal)}>
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onFreeze(goal); }}>
                       <Lock className="mr-2 h-4 w-4" />
                       Freeze Goal
                     </DropdownMenuItem>
@@ -178,83 +162,81 @@ function OrganizationalGoalCard({ goal, onEdit, onDelete, onUpdateProgress, onSt
                 </>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onDelete(goal)} className="text-red-600">
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDelete(goal); }} className="text-red-600">
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Goal
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+
+        <div className="flex flex-wrap items-center gap-1">
+          <Badge className={`${statusColors[goal.status]} text-xs px-1.5 py-0`}>
+            {goal.status}
+          </Badge>
+          {goal.frozen && (
+            <Badge className="bg-gray-200 text-gray-800 text-xs px-1.5 py-0">Frozen</Badge>
+          )}
+          {goal.quarter && goal.year && (
+            <Badge variant="outline" className="text-xs px-1.5 py-0">{goal.quarter} {goal.year}</Badge>
+          )}
+        </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+
+      <CardContent className="space-y-2 flex-1 flex flex-col pt-0 px-4 pb-4">
         {goal.description && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div
-                  className="text-sm text-gray-600 line-clamp-2 prose prose-sm max-w-none cursor-help"
-                  dangerouslySetInnerHTML={{ __html: goal.description }}
-                />
-              </TooltipTrigger>
-              <TooltipContent className="max-w-md max-h-60 overflow-y-auto">
-                <div
-                  className="prose prose-sm"
-                  dangerouslySetInnerHTML={{ __html: goal.description }}
-                />
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <div className="text-xs text-gray-600 line-clamp-2 break-words"
+               dangerouslySetInnerHTML={{ __html: goal.description }} />
         )}
 
         {goal.tags && goal.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {goal.tags.map((tag) => (
+          <div className="flex flex-wrap gap-1">
+            {goal.tags.slice(0, 2).map((tag) => (
               <Badge
                 key={tag.id}
                 variant="outline"
-                className="text-xs"
-                style={{ borderColor: tag.color, color: tag.color }}
+                className="text-xs px-1.5 py-0 max-w-[100px]"
+                style={{
+                  borderColor: tag.color,
+                  color: tag.color,
+                  backgroundColor: `${tag.color}15`
+                }}
               >
-                {tag.name}
+                <span className="truncate">{tag.name}</span>
               </Badge>
             ))}
+            {goal.tags.length > 2 && (
+              <Badge variant="outline" className="text-xs px-1.5 py-0">
+                +{goal.tags.length - 2}
+              </Badge>
+            )}
           </div>
         )}
 
-        {goal.kpis && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded cursor-help">
-                  <span className="font-semibold">KPIs:</span>{" "}
-                  <span className="line-clamp-1">{goal.kpis}</span>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-md">
-                <div className="text-sm">
-                  <p className="font-semibold mb-1">KPIs:</p>
-                  <p>{goal.kpis}</p>
-                </div>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+        <div className="space-y-1.5 mt-auto pt-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-gray-600 font-medium">Progress</span>
+            <span className="font-semibold text-gray-900">{goal.progress_percentage || 0}%</span>
+          </div>
+          <Progress value={goal.progress_percentage || 0} className="h-1.5" />
+        </div>
+
+        {(goal.start_date || goal.end_date) && (
+          <div className="flex items-center gap-2 text-xs text-gray-500 pt-1.5 border-t">
+            {goal.start_date && (
+              <div className="flex items-center gap-1 flex-1 min-w-0">
+                <Clock className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">{new Date(goal.start_date).toLocaleDateString()}</span>
+              </div>
+            )}
+            {goal.end_date && (
+              <div className="flex items-center gap-1 flex-1 min-w-0">
+                <Calendar className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate text-right">Due: {new Date(goal.end_date).toLocaleDateString()}</span>
+              </div>
+            )}
+          </div>
         )}
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600">Progress</span>
-            <span className="font-semibold">{goal.progress_percentage || 0}%</span>
-          </div>
-          <Progress value={goal.progress_percentage || 0} className="h-2" />
-        </div>
-
-        <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t">
-          <div className="flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5" />
-            {new Date(goal.start_date).toLocaleDateString()}
-          </div>
-          <div>Due: {new Date(goal.end_date).toLocaleDateString()}</div>
-        </div>
       </CardContent>
     </Card>
   )
