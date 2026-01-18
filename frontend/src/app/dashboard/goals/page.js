@@ -108,50 +108,6 @@ const formatStatus = (status) => {
   ).join(' ')
 }
 
-import React from "react"
-import { Calendar, Clock, Edit, Trash2, CheckCircle, XCircle, User, MoreHorizontal } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import { Building2, Target } from "lucide-react"
-
-const statusColors = {
-  PENDING_APPROVAL: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  ACTIVE: "bg-blue-100 text-blue-800 border-blue-200",
-  ACHIEVED: "bg-green-100 text-green-800 border-green-200",
-  DISCARDED: "bg-gray-100 text-gray-800 border-gray-200",
-  REJECTED: "bg-red-100 text-red-800 border-red-200",
-}
-
-const typeIcons = {
-  YEARLY: Building2,
-  QUARTERLY: Calendar,
-  DEPARTMENTAL: Building2,
-  INDIVIDUAL: User,
-}
-
-const formatStatus = (status) => {
-  if (!status) return ''
-  return status.split('_').map(word => 
-    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-  ).join(' ')
-}
-
 function GoalCard({ 
   goal, 
   onEdit, 
