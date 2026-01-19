@@ -103,7 +103,7 @@ class GoalInDB(BaseModel):
     title: str
     description: Optional[str] = None
     kpis: Optional[str] = None
-    scope: GoalScope
+    scope: Optional[GoalScope] = None  # Nullable for backward compatibility
     type: GoalType
     start_date: Optional[date] = None
     end_date: Optional[date] = None

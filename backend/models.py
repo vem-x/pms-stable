@@ -262,7 +262,7 @@ class Goal(Base):
     title = Column(String(1000), nullable=False)
     description = Column(Text)  # Now supports rich text (HTML)
     kpis = Column(Text, nullable=True)  # Key Performance Indicators
-    scope = Column(Enum(GoalScope), nullable=False)
+    scope = Column(Enum(GoalScope), nullable=True)  # Nullable for backward compatibility with existing goals
     type = Column(Enum(GoalType), nullable=False)
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)

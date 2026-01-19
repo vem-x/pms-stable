@@ -64,8 +64,9 @@ def upgrade():
         WHERE scope = 'INDIVIDUAL'
     """)
 
-    # Step 4: Make scope column non-nullable
-    op.alter_column('goals', 'scope', nullable=False)
+    # Step 4: Keep scope column nullable for backward compatibility
+    # This allows manual updating of existing goals
+    # op.alter_column('goals', 'scope', nullable=False)  # Commented out for backward compatibility
 
     # Step 5: Update GoalType enum to only have YEARLY and QUARTERLY
     # First, drop the old enum constraint
