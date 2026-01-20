@@ -119,7 +119,7 @@ function GoalCard({
   onRequestChange, 
   canEdit = false, 
   canApprove = false, 
-  isTeamGoal = false, 
+  isSuperviseeGoal = false, 
   onViewDetails, 
   currentUserId 
 }) {
@@ -160,7 +160,7 @@ function GoalCard({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
               {/* Approve option for supervisors on supervisee goals (created by supervisees) */}
-              {canApprove && isPendingApproval && isTeamGoal && !isAssignedByOther && (
+              {canApprove && isPendingApproval && isSuperviseeGoal && !isAssignedByOther && (
                 <>
                   <DropdownMenuItem onClick={(e) => {
                     e.stopPropagation();
@@ -194,8 +194,8 @@ function GoalCard({
                 </>
               )}
 
-              {/* Edit and delete options for team goals (supervisor can edit assigned goals) */}
-              {isTeamGoal && !goal.frozen && (
+              {/* Edit and delete options for supervisee goals (supervisor can edit assigned goals) */}
+              {isSuperviseeGoal && !goal.frozen && (
                 <>
                   <DropdownMenuItem onClick={(e) => {
                     e.stopPropagation();
@@ -215,7 +215,7 @@ function GoalCard({
               )}
 
               {/* Edit and progress options for own goals */}
-              {canEdit && !goal.frozen && !isTeamGoal && (
+              {canEdit && !goal.frozen && !isSuperviseeGoal && (
                 <>
                   <DropdownMenuItem onClick={(e) => {
                     e.stopPropagation();
@@ -284,7 +284,7 @@ function GoalCard({
               Assigned
             </Badge>
           )}
-          {goal.quarter && goal.year && (
+          {goal.quarter && goal.year && goal.type === "QUARTERLY" && (
             <Badge variant="outline" className="text-xs px-1.5 py-0">{goal.quarter} {goal.year}</Badge>
           )}
         </div>
@@ -345,7 +345,7 @@ function GoalCard({
           </div>
         )}
         
-        {goal.owner_name && isTeamGoal && (
+        {goal.owner_name && isSuperviseeGoal && (
           <div className="flex items-center gap-2 pt-1.5 border-t">
             <Avatar className="h-6 w-6 flex-shrink-0">
               <AvatarFallback className="text-xs bg-blue-100 text-blue-700">
@@ -435,7 +435,8 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    type: availableTypes[0]?.value || (isDepartmentalOnly ? "DEPARTMENTAL" : "YEARLY"),
+    scope: availableTypes[0]?.value || (isDepartmentalOnly ? "DEPARTMENTAL" : "COMPANY_WIDE"),
+    type: "QUARTERLY",  // Time period: YEARLY or QUARTERLY
     kpis: "",
     difficulty_level: 3,
     start_date: "",
@@ -456,7 +457,8 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
       setFormData({
         title: goal.title || "",
         description: goal.description || "",
-        type: goal.type || availableTypes[0]?.value || (isDepartmentalOnly ? "DEPARTMENTAL" : "YEARLY"),
+        scope: goal.scope || availableTypes[0]?.value || (isDepartmentalOnly ? "DEPARTMENTAL" : "COMPANY_WIDE"),
+        type: goal.type || "QUARTERLY",
         kpis: goal.kpis || "",
         difficulty_level: goal.difficulty_level || 3,
         start_date: goal.start_date || "",
@@ -471,7 +473,8 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
       setFormData({
         title: "",
         description: "",
-        type: availableTypes[0]?.value || (isDepartmentalOnly ? "DEPARTMENTAL" : "YEARLY"),
+        scope: availableTypes[0]?.value || (isDepartmentalOnly ? "DEPARTMENTAL" : "COMPANY_WIDE"),
+        type: "QUARTERLY",
         kpis: "",
         difficulty_level: 3,
         start_date: "",
@@ -495,24 +498,29 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
     }
 
     // Only include organization_id for DEPARTMENTAL goals
-    if (formData.type === "DEPARTMENTAL") {
+    if (formData.scope === "DEPARTMENTAL") {
       submitData.organization_id = formData.organization_id
     } else {
       delete submitData.organization_id
+    }
+
+    // Don't send quarter/year for YEARLY goals
+    if (formData.type === "YEARLY") {
+      delete submitData.quarter
+      delete submitData.year
     }
 
     onSubmit(submitData)
     onClose()
   }
 
-  // Potential parents: YEARLY/QUARTERLY for DEPARTMENTAL, YEARLY for QUARTERLY
+  // Potential parents: Company-wide goals for departmental goals
   const potentialParents = goals.filter((g) => {
-    if (formData.type === "DEPARTMENTAL") {
-      return (g.type === "YEARLY" || g.type === "QUARTERLY") && g.status === "ACTIVE"
+    if (formData.scope === "DEPARTMENTAL") {
+      // Departmental goals can have company-wide (YEARLY/QUARTERLY) parents
+      return g.scope === "COMPANY_WIDE" && g.status === "ACTIVE"
     }
-    if (formData.type === "QUARTERLY") {
-      return g.type === "YEARLY" && g.status === "ACTIVE"
-    }
+    // Company-wide goals don't have parents
     return false
   })
 
@@ -528,13 +536,13 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
           </DialogHeader>
 
           <div className="grid gap-6 py-4">
-            {/* Goal Type Selection */}
+            {/* Goal Scope Selection */}
             {availableTypes.length > 1 && !goal && (
               <div className="grid gap-2">
-                <Label htmlFor="type">Goal Type <span className="text-red-500">*</span></Label>
+                <Label htmlFor="scope">Goal Scope <span className="text-red-500">*</span></Label>
                 <Select
-                  value={formData.type}
-                  onValueChange={(value) => setFormData({ ...formData, type: value, organization_id: "", parent_goal_id: "" })}
+                  value={formData.scope}
+                  onValueChange={(value) => setFormData({ ...formData, scope: value, organization_id: "", parent_goal_id: "" })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -551,7 +559,7 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
             )}
 
             {/* Organization Selector (for DEPARTMENTAL goals only) */}
-            {formData.type === "DEPARTMENTAL" && (
+            {formData.scope === "DEPARTMENTAL" && (
               <div className="grid gap-2">
                 <Label htmlFor="organization">Department/Directorate <span className="text-red-500">*</span></Label>
                 {scopedOrganizations.length === 1 ? (
@@ -686,8 +694,31 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
               </Select>
             </div>
 
-            <div className={`grid gap-4 ${formData.type === "YEARLY" ? "grid-cols-1" : "grid-cols-2"}`}>
-              {formData.type !== "YEARLY" && (
+            <div className="grid gap-2">
+              <Label htmlFor="type">Time Period <span className="text-red-500">*</span></Label>
+              <Select
+                value={formData.type}
+                onValueChange={(value) => setFormData({
+                  ...formData,
+                  type: value,
+                  // Clear quarter and year when switching to YEARLY
+                  quarter: value === "YEARLY" ? "" : formData.quarter || `Q${currentQuarter}`,
+                  year: value === "YEARLY" ? "" : formData.year || currentYear
+                })}
+                disabled={!!goal}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="YEARLY">Yearly</SelectItem>
+                  <SelectItem value="QUARTERLY">Quarterly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {formData.type === "QUARTERLY" && (
+              <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="quarter">Quarter <span className="text-red-500">*</span></Label>
                   <Select
@@ -705,21 +736,21 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
                     </SelectContent>
                   </Select>
                 </div>
-              )}
 
-              <div className="grid gap-2">
-                <Label htmlFor="year">Year <span className="text-red-500">*</span></Label>
-                <Input
-                  id="year"
-                  type="number"
-                  min={currentYear - 1}
-                  max={currentYear + 5}
-                  value={formData.year}
-                  onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
-                  required
-                />
+                <div className="grid gap-2">
+                  <Label htmlFor="year">Year <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="year"
+                    type="number"
+                    min={currentYear - 1}
+                    max={currentYear + 5}
+                    value={formData.year}
+                    onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
+                    required
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
@@ -783,7 +814,7 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    type: "INDIVIDUAL",
+    type: "QUARTERLY",  // Time period: YEARLY or QUARTERLY
     kpis: "",
     difficulty_level: 3,
     start_date: "",
@@ -805,7 +836,7 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
       setFormData({
         title: goal.title || "",
         description: goal.description || "",
-        type: "INDIVIDUAL",
+        type: goal.type || "QUARTERLY",
         kpis: goal.kpis || "",
         difficulty_level: goal.difficulty_level || 3,
         start_date: goal.start_date || "",
@@ -820,7 +851,7 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
       setFormData({
         title: "",
         description: "",
-        type: "INDIVIDUAL",
+        type: "QUARTERLY",
         kpis: "",
         difficulty_level: 3,
         start_date: "",
@@ -836,12 +867,21 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    onSubmit({
+    const submitData = {
       ...formData,
+      scope: "INDIVIDUAL",  // Individual goals always have INDIVIDUAL scope
       start_date: formData.start_date || null,
       end_date: formData.end_date || null,
       supervisee_id: createForSupervisee ? formData.supervisee_id : undefined
-    })
+    }
+
+    // Don't send quarter/year for YEARLY goals
+    if (formData.type === "YEARLY") {
+      delete submitData.quarter
+      delete submitData.year
+    }
+
+    onSubmit(submitData)
     onClose()
   }
 
@@ -871,21 +911,21 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
                   className="h-4 w-4"
                 />
                 <Label htmlFor="createForSupervisee" className="cursor-pointer">
-                  Create this goal for a team member
+                  Create this goal for a supervisee
                 </Label>
               </div>
             )}
 
             {createForSupervisee && (
               <div className="grid gap-2">
-                <Label htmlFor="supervisee">Select Team Member <span className="text-red-500">*</span></Label>
+                <Label htmlFor="supervisee">Select Supervisee <span className="text-red-500">*</span></Label>
                 <Select
                   value={formData.supervisee_id}
                   onValueChange={(value) => setFormData({ ...formData, supervisee_id: value })}
                   required={createForSupervisee}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select team member" />
+                    <SelectValue placeholder="Select supervisee" />
                   </SelectTrigger>
                   <SelectContent>
                     {supervisees.map((s) => (
@@ -1014,9 +1054,32 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="quarter">Quarter <span className="text-red-500">*</span></Label>
+            <div className="grid gap-2">
+              <Label htmlFor="type">Time Period <span className="text-red-500">*</span></Label>
+              <Select
+                value={formData.type}
+                onValueChange={(value) => setFormData({
+                  ...formData,
+                  type: value,
+                  // Clear quarter and year when switching to YEARLY
+                  quarter: value === "YEARLY" ? "" : formData.quarter || `Q${currentQuarter}`,
+                  year: value === "YEARLY" ? "" : formData.year || currentYear
+                })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="YEARLY">Yearly</SelectItem>
+                  <SelectItem value="QUARTERLY">Quarterly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {formData.type === "QUARTERLY" && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="quarter">Quarter <span className="text-red-500">*</span></Label>
                 <Select
                   value={formData.quarter}
                   onValueChange={(value) => setFormData({ ...formData, quarter: value })}
@@ -1046,6 +1109,7 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
                 />
               </div>
             </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
@@ -1493,14 +1557,14 @@ function GoalDetailDialog({ goal, isOpen, onClose, parentGoal, supervisor, super
           {/* Supervisee Info (for supervisors viewing supervisee goals) */}
           {supervisee && (
             <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <h3 className="font-semibold text-sm text-blue-900">Team Member</h3>
+              <h3 className="font-semibold text-sm text-blue-900">Supervisee</h3>
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-full bg-blue-200 flex items-center justify-center">
                   <User className="h-5 w-5 text-blue-600" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-blue-900">{supervisee.name}</p>
-                  <p className="text-xs text-blue-700">{supervisee.job_title || 'Team Member'}</p>
+                  <p className="text-xs text-blue-700">{supervisee.job_title || 'Supervisee'}</p>
                   {supervisee.email && (
                     <p className="text-xs text-blue-600">{supervisee.email}</p>
                   )}
@@ -1602,7 +1666,7 @@ export default function GoalsPage() {
   const { data: organizations = [] } = useOrganizations()
   const { data: tags = [] } = useGoalTags()
 
-  // Refetch supervisee goals when switching to team tab
+  // Refetch supervisee goals when switching to supervisee goals tab
   useEffect(() => {
     if (activeTab === "team") {
       refetchSuperviseeGoals()
@@ -1651,7 +1715,7 @@ export default function GoalsPage() {
   ]
 
   const superviseeOptions = [
-    { value: "all", label: "All Team Members" },
+    { value: "all", label: "All Supervisees" },
     ...supervisees.map(s => ({ value: s.id, label: s.name }))
   ]
 
@@ -1994,7 +2058,7 @@ export default function GoalsPage() {
           {isSupervisor && (
             <TabsTrigger value="team" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
-              Team Goals
+              Supervisee Goals
             </TabsTrigger>
           )}
         </TabsList>
@@ -2407,7 +2471,7 @@ export default function GoalsPage() {
               <div className="relative flex-1 min-w-[250px]">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search goals or team members..."
+                  placeholder="Search goals or supervisees..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-9"
@@ -2439,8 +2503,8 @@ export default function GoalsPage() {
                 onValueChange={setSuperviseeFilter}
                 options={superviseeOptions}
                 placeholder="Filter by member"
-                searchPlaceholder="Search team member..."
-                emptyText="No team members found."
+                searchPlaceholder="Search supervisee..."
+                emptyText="No supervisees found."
                 className="w-[220px]"
               />
 
@@ -2497,7 +2561,7 @@ export default function GoalsPage() {
                         onViewDetails={handleViewDetails}
                         canEdit={canEditGoals}
                         canApprove={canApproveGoals}
-                        isTeamGoal={true}
+                        isSuperviseeGoal={true}
                         currentUserId={user?.user_id}
                       />
                     ))}

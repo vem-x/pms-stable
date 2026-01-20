@@ -727,8 +727,8 @@ async def create_goal(
         type=goal_data.type,
         start_date=goal_data.start_date,
         end_date=goal_data.end_date,
-        quarter=goal_data.quarter,
-        year=goal_data.year,
+        quarter=goal_data.quarter if goal_data.type == GoalType.QUARTERLY else None,
+        year=goal_data.year if goal_data.type == GoalType.QUARTERLY else None,
         parent_goal_id=goal_data.parent_goal_id,
         created_by=user.id,
         owner_id=goal_data.owner_id if goal_data.owner_id else user.id,  # Default to creator as owner
@@ -827,7 +827,25 @@ async def update_goal(
     # Handle tags separately (relationship field)
     tag_ids = update_data.pop('tag_ids', None)
 
+    # If type is being changed to YEARLY, clear quarter and year
+    if 'type' in update_data and update_data['type'] == GoalType.YEARLY:
+        goal.quarter = None
+        goal.year = None
+
+    # Validate quarter/year for QUARTERLY goals
+    if 'type' in update_data and update_data['type'] == GoalType.QUARTERLY:
+        # If changing to QUARTERLY, ensure quarter and year are provided
+        quarter = update_data.get('quarter', goal.quarter)
+        year = update_data.get('year', goal.year)
+        if not quarter:
+            raise HTTPException(status_code=400, detail="Quarter is required for quarterly goals")
+        if not year:
+            raise HTTPException(status_code=400, detail="Year is required for quarterly goals")
+
     for field, value in update_data.items():
+        # Skip quarter/year for YEARLY goals
+        if goal.type == GoalType.YEARLY and field in ['quarter', 'year']:
+            continue
         setattr(goal, field, value)
 
     # Update tags if provided

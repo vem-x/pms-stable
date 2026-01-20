@@ -388,7 +388,14 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit }) {
                 <Label htmlFor="type">Time Period <span className="text-red-500">*</span></Label>
                 <Select
                   value={formData.type}
-                  onValueChange={(value) => setFormData({ ...formData, type: value, parent_goal_id: "" })}
+                  onValueChange={(value) => setFormData({
+                    ...formData,
+                    type: value,
+                    parent_goal_id: "",
+                    // Clear quarter and year when switching to YEARLY
+                    quarter: value === "YEARLY" ? "" : formData.quarter,
+                    year: value === "YEARLY" ? "" : formData.year
+                  })}
                   disabled={!!goal}
                 >
                   <SelectTrigger>
@@ -1063,21 +1070,37 @@ export default function GoalsManagementPage() {
   ]
 
   const handleCreate = (data) => {
-    createMutation.mutate({
+    const submitData = {
       ...data,
       parent_goal_id: data.parent_goal_id === "" ? null : data.parent_goal_id,
       organization_id: data.organization_id === "" ? null : data.organization_id,
-    })
+    }
+
+    // Don't send quarter/year for YEARLY goals
+    if (data.type === "YEARLY") {
+      delete submitData.quarter
+      delete submitData.year
+    }
+
+    createMutation.mutate(submitData)
   }
 
   const handleUpdate = (data) => {
     if (editingGoal) {
-      updateMutation.mutate({
+      const submitData = {
         id: editingGoal.id,
         ...data,
         parent_goal_id: data.parent_goal_id === "" ? null : data.parent_goal_id,
         organization_id: data.organization_id === "" ? null : data.organization_id,
-      })
+      }
+
+      // Don't send quarter/year for YEARLY goals
+      if (data.type === "YEARLY") {
+        delete submitData.quarter
+        delete submitData.year
+      }
+
+      updateMutation.mutate(submitData)
     }
   }
 
