@@ -95,6 +95,7 @@ def enrich_goal_dict(goal_dict: dict, goal: Goal, db: Session) -> dict:
 async def get_goals(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
+    scope: Optional[GoalScope] = Query(None, description="Filter by goal scope: COMPANY_WIDE, DEPARTMENTAL, or INDIVIDUAL"),
     goal_type: Optional[GoalType] = None,
     status: Optional[GoalStatus] = None,
     current_user: UserSession = Depends(get_current_user),
@@ -102,64 +103,122 @@ async def get_goals(
     permission_service: UserPermissions = Depends(get_permission_service)
 ):
     """
-    List goals filtered by scope and permissions
-    Users see goals based on their organizational access and permissions
+    List goals filtered by scope and permissions.
+
+    Use the 'scope' parameter to fetch specific goal types:
+    - COMPANY_WIDE: Organizational goals (yearly/quarterly) - everyone can see these
+    - DEPARTMENTAL: Department/Directorate-specific goals - filtered by user's org level
+    - INDIVIDUAL: Personal employee goals - user sees their own and supervisees' goals
+    - No scope parameter: All goals user has access to (default behavior)
     """
     user = db.query(User).filter(User.id == current_user.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Get user's organization
+    user_org = db.query(Organization).filter(Organization.id == user.organization_id).first()
+    if not user_org:
+        raise HTTPException(status_code=404, detail="User organization not found")
+
     # Build base query
     query = db.query(Goal)
 
-    # Apply scope filtering based on permissions and organizational level
-    # 1. Users with GOAL_VIEW_ALL permission can see ALL goals
-    # 2. Users at DIRECTORATE level can see all departmental goals in their directorate
-    # 3. Users at DEPARTMENT level can only see departmental goals in their department
-    # 4. Everyone can see COMPANY_WIDE goals
-    # 5. Users can see their own INDIVIDUAL goals and those of their supervisees
+    # Check if user has admin access
+    is_admin = permission_service.user_has_permission(user, SystemPermissions.GOAL_VIEW_ALL)
 
-    if permission_service.user_has_permission(user, SystemPermissions.GOAL_VIEW_ALL):
-        # Admin users can see all goals (no filtering needed)
-        pass
+    # Apply scope-specific filtering
+    if scope == GoalScope.COMPANY_WIDE:
+        # Fetch only organizational goals (yearly/quarterly)
+        # Everyone can see these
+        query = query.filter(Goal.scope == GoalScope.COMPANY_WIDE)
+
+    elif scope == GoalScope.DEPARTMENTAL:
+        # Fetch only departmental goals
+        # Filter based on user's organizational level
+        query = query.filter(Goal.scope == GoalScope.DEPARTMENTAL)
+
+        if not is_admin:
+            if user_org.level == OrganizationLevel.GLOBAL:
+                # Global-level users can see all departmental goals
+                pass  # No additional filtering
+            elif user_org.level == OrganizationLevel.DIRECTORATE:
+                # Directorate-level users can see all departmental goals in their directorate
+                # Get all organizations under this directorate
+                def get_all_child_org_ids(org_id):
+                    """Recursively get all child organization IDs"""
+                    child_ids = [org_id]
+                    children = db.query(Organization).filter(Organization.parent_id == org_id).all()
+                    for child in children:
+                        child_ids.extend(get_all_child_org_ids(child.id))
+                    return child_ids
+
+                accessible_org_ids = get_all_child_org_ids(user.organization_id)
+                query = query.filter(Goal.organization_id.in_(accessible_org_ids))
+            else:
+                # Department/Division/Unit level users can only see goals in their department
+                query = query.filter(Goal.organization_id == user.organization_id)
+
+    elif scope == GoalScope.INDIVIDUAL:
+        # Fetch only individual goals
+        # User can see their own goals and their supervisees' goals
+        query = query.filter(Goal.scope == GoalScope.INDIVIDUAL)
+
+        if not is_admin:
+            # Get user's supervisees
+            supervisee_ids = [s.id for s in db.query(User).filter(User.supervisor_id == user.id).all()]
+
+            from sqlalchemy import or_
+            query = query.filter(
+                or_(
+                    Goal.owner_id == user.id,
+                    Goal.owner_id.in_(supervisee_ids),
+                    Goal.created_by == user.id
+                )
+            )
+
     else:
-        # Get user's supervisees (users who report to this user)
-        supervisee_ids_subquery = db.query(User.id).filter(User.supervisor_id == user.id).subquery()
+        # No scope specified - return all goals user has access to
+        # This is the default behavior for backward compatibility
+        if not is_admin:
+            from sqlalchemy import or_
 
-        from sqlalchemy import or_
+            # Get supervisees
+            supervisee_ids = [s.id for s in db.query(User).filter(User.supervisor_id == user.id).all()]
 
-        # Determine accessible organization IDs based on organizational level
-        # This overrides role scope_override for departmental goals visibility
-        user_org = db.query(Organization).filter(Organization.id == user.organization_id).first()
+            # Determine accessible organizations for departmental goals
+            if user_org.level == OrganizationLevel.GLOBAL:
+                accessible_org_ids = [org.id for org in db.query(Organization).all()]
+            elif user_org.level == OrganizationLevel.DIRECTORATE:
+                def get_all_child_org_ids(org_id):
+                    child_ids = [org_id]
+                    children = db.query(Organization).filter(Organization.parent_id == org_id).all()
+                    for child in children:
+                        child_ids.extend(get_all_child_org_ids(child.id))
+                    return child_ids
+                accessible_org_ids = get_all_child_org_ids(user.organization_id)
+            else:
+                accessible_org_ids = [user.organization_id]
 
-        if user_org.level == OrganizationLevel.DIRECTORATE:
-            # Directorate-level users can see all departmental goals in their directorate
-            accessible_org_ids = permission_service.get_accessible_organizations(user)
-        elif user_org.level == OrganizationLevel.GLOBAL:
-            # Global-level users can see all departmental goals
-            accessible_org_ids = [org.id for org in db.query(Organization).all()]
-        else:
-            # Department/Division/Unit level users can only see goals in their own organization
-            # This restricts access even if they have role scope_override for other purposes
-            accessible_org_ids = [user.organization_id]
+            # Combined visibility filter
+            visibility_filter = or_(
+                Goal.scope == GoalScope.COMPANY_WIDE,
+                (Goal.scope == GoalScope.DEPARTMENTAL) & (Goal.organization_id.in_(accessible_org_ids)),
+                (Goal.scope == GoalScope.INDIVIDUAL) & (
+                    or_(
+                        Goal.owner_id == user.id,
+                        Goal.owner_id.in_(supervisee_ids),
+                        Goal.created_by == user.id
+                    )
+                )
+            )
+            query = query.filter(visibility_filter)
 
-        visibility_filter = or_(
-            Goal.scope == GoalScope.COMPANY_WIDE,  # All company-wide goals visible to everyone
-            (Goal.scope == GoalScope.DEPARTMENTAL) & (Goal.organization_id.in_(accessible_org_ids)),  # Departmental goals filtered by org level
-            Goal.owner_id == user.id,  # Individual goals owned by user
-            Goal.owner_id.in_(supervisee_ids_subquery),  # Individual goals owned by supervisees
-            Goal.created_by == user.id  # Goals created by user
-        )
-        query = query.filter(visibility_filter)
-
-    # Apply filters
+    # Apply additional filters
     if goal_type:
         query = query.filter(Goal.type == goal_type)
 
     if status:
         query = query.filter(Goal.status == status)
-
-    # organization_id filter is no longer applicable since goals are company-wide
 
     # Get total count
     total = query.count()

@@ -36,13 +36,10 @@ try {
     $backendPath = Join-Path $projectRoot "backend"
     Set-Location $backendPath
     Add-Content -Path $logFile -Value "$timestamp - Starting database migration process..."
-    Write-Host "Running database migrations..." -ForegroundColor Yellow
-
-    # Step 1: Auto-generate migration if schema changes exist
-    Write-Host "Step 1: Auto-generating migration from schema changes..." -ForegroundColor Yellow
+    Write-Host "Applying database migrations..." -ForegroundColor Yellow
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = "python"
-    $psi.Arguments = "-m alembic revision --autogenerate -m `"Auto-generated migration at startup`""
+    $psi.Arguments = "-m alembic upgrade head"
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
@@ -56,42 +53,9 @@ try {
     $stdout = $process.StandardOutput.ReadToEnd()
     $stderr = $process.StandardError.ReadToEnd()
     $process.WaitForExit()
-    $revisionExitCode = $process.ExitCode
+    $migrationExitCode = $process.ExitCode
 
-    $revisionOutput = $stdout + $stderr
-
-    if ($revisionExitCode -eq 0) {
-        Add-Content -Path $logFile -Value "$timestamp - Migration auto-generation completed"
-        Add-Content -Path $logFile -Value "$timestamp - Revision output: $revisionOutput"
-        Write-Host "OK - Migration revision created (if changes detected)" -ForegroundColor Green
-    } else {
-        Add-Content -Path $logFile -Value "$timestamp - WARNING: Migration auto-generation had issues with exit code $revisionExitCode"
-        Add-Content -Path $logFile -Value "$timestamp - Revision output: $revisionOutput"
-        Write-Host "WARNING - Migration revision had issues, continuing with upgrade..." -ForegroundColor Yellow
-        Write-Host $revisionOutput -ForegroundColor Yellow
-    }
-
-    # Step 2: Apply all pending migrations
-    Write-Host "Step 2: Applying all pending migrations..." -ForegroundColor Yellow
-    $psi2 = New-Object System.Diagnostics.ProcessStartInfo
-    $psi2.FileName = "python"
-    $psi2.Arguments = "-m alembic upgrade head"
-    $psi2.RedirectStandardOutput = $true
-    $psi2.RedirectStandardError = $true
-    $psi2.UseShellExecute = $false
-    $psi2.CreateNoWindow = $true
-    $psi2.WorkingDirectory = $backendPath
-
-    $process2 = New-Object System.Diagnostics.Process
-    $process2.StartInfo = $psi2
-    $process2.Start() | Out-Null
-
-    $stdout2 = $process2.StandardOutput.ReadToEnd()
-    $stderr2 = $process2.StandardError.ReadToEnd()
-    $process2.WaitForExit()
-    $migrationExitCode = $process2.ExitCode
-
-    $migrationOutput = $stdout2 + $stderr2
+    $migrationOutput = $stdout + $stderr
 
     if ($migrationExitCode -eq 0) {
         Add-Content -Path $logFile -Value "$timestamp - Database migrations applied successfully"

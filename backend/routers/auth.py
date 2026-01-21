@@ -6,7 +6,7 @@ Supports refresh token pattern for extended sessions
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 from pydantic import BaseModel
 from typing import Optional
 
@@ -145,7 +145,9 @@ async def onboard_user(
     db: Session = Depends(get_db)
 ):
     """
-    Token-based first-time user setup
+    Token-based first-time user setup OR password reset
+    - For new users: Set initial password and complete onboarding
+    - For existing users: Reset password (when initiated via forgot-password flow)
     Users receive email with secure token → set password → gain system access
     """
     user = db.query(User).filter(User.onboarding_token == onboarding_data.token).first()
@@ -155,24 +157,30 @@ async def onboard_user(
             detail="Invalid or expired onboarding token"
         )
 
- 
-
-    if user.password_hash:
+    # Check if token is expired
+    if user.onboarding_token_expires_at and user.onboarding_token_expires_at < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User has already been onboarded"
+            detail="Token has expired. Please request a new password reset link."
         )
 
-    # Set password and clear onboarding token
+    # Determine if this is onboarding or password reset
+    is_password_reset = bool(user.password_hash)
+
+    # Set/update password and clear onboarding token
     user.password_hash = get_password_hash(onboarding_data.password)
     user.onboarding_token = None
     user.onboarding_token_expires_at = None
-    user.email_verified_at = datetime.now()
-    user.status = UserStatus.ACTIVE
+
+    # Only set email_verified_at and status if this is initial onboarding
+    if not is_password_reset:
+        user.email_verified_at = datetime.now(timezone.utc)
+        user.status = UserStatus.ACTIVE
 
     db.commit()
 
-    return {"message": "User successfully onboarded"}
+    message = "Password reset successful" if is_password_reset else "User successfully onboarded"
+    return {"message": message}
 
 @router.post("/reset-password")
 async def reset_password(
@@ -190,7 +198,7 @@ async def reset_password(
 
     # Generate new onboarding token with 7-day expiration
     user.onboarding_token = generate_onboarding_token()
-    user.onboarding_token_expires_at = datetime.now() + timedelta(days=7)
+    user.onboarding_token_expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     db.commit()
 
     # Send password reset email

@@ -1735,7 +1735,24 @@ export default function GoalsPage() {
   const canCreateQuarterlyGoals = usePermission("goal_create_quarterly")
   const canCreateDepartmentalGoals = usePermission("goal_create_departmental")
 
-  const { data: goals = [], isLoading } = useGoals()
+  // Fetch goals based on active tab with appropriate scope parameter
+  const getScopeForTab = (tab) => {
+    switch (tab) {
+      case "organizational":
+        return "COMPANY_WIDE"
+      case "departmental":
+        return "DEPARTMENTAL"
+      case "my":
+        return "INDIVIDUAL"
+      default:
+        return null // No scope filter for other tabs
+    }
+  }
+
+  const currentScope = getScopeForTab(activeTab)
+  const scopeParams = currentScope ? { scope: currentScope } : {}
+
+  const { data: goals = [], isLoading } = useGoals(scopeParams)
   const { data: superviseeGoals = [], refetch: refetchSuperviseeGoals } = useSuperviseeGoals()
   const { data: users = [], isLoading: isLoadingUsers } = useUsers()
   const { data: organizations = [] } = useOrganizations()
@@ -1822,7 +1839,9 @@ export default function GoalsPage() {
     return filtered
   }
 
- 
+
+// Apply common filters (year, quarter, search, tags)
+// Note: Scope filtering is now handled by the API based on activeTab
 const filteredBase = useMemo(() => {
   let list = [...goals];
 
@@ -1849,51 +1868,25 @@ const filteredBase = useMemo(() => {
   return applyTagFilter(list);
 }, [goals, yearFilter, quarterFilter, searchTerm, tagFilter]);
 
-// 2. Now, derive the specific lists based on "scope"
+// For organizational tab - goals are already filtered by API as COMPANY_WIDE
 const organizationalGoals = useMemo(() => {
-  return filteredBase.filter(g => g.scope === "COMPANY_WIDE");
+  return filteredBase;
 }, [filteredBase]);
 
+// For departmental tab - goals are already filtered by API as DEPARTMENTAL
+// Apply additional department filter if specific department is selected
 const departmentalGoals = useMemo(() => {
-  return filteredBase.filter(g => {
-    const isDept = g.scope === "DEPARTMENTAL";
-    // If a specific department is selected, filter by organization_id
-    if (departmentFilter !== "all") {
-      return isDept && g.organization_id === departmentFilter;
-    }
-    return isDept;
-  });
+  if (departmentFilter !== "all") {
+    return filteredBase.filter(g => g.organization_id === departmentFilter);
+  }
+  return filteredBase;
 }, [filteredBase, departmentFilter]);
 
+// For my goals tab - goals are already filtered by API as INDIVIDUAL
+// No additional filtering needed since API handles scope
 const myIndividualGoals = useMemo(() => {
-  return filteredBase.filter(g => 
-    g.scope === "INDIVIDUAL" && g.owner_id === user?.user_id
-  );
-}, [filteredBase, user]);
-
-  
-  const allGoals = useMemo(() => {
-    let filtered = [...goals]
-
-    if (yearFilter !== "all") {
-      filtered = filtered.filter(g => g.year?.toString() === yearFilter)
-    }
-
-    if (quarterFilter !== "all") {
-      filtered = filtered.filter(g => g.quarter === quarterFilter)
-    }
-
-    if (searchTerm) {
-      filtered = filtered.filter(g =>
-        g.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        g.description?.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-    }
-
-    filtered = applyTagFilter(filtered)
-
-    return filtered
-  }, [goals, yearFilter, quarterFilter, searchTerm, tagFilter])
+  return filteredBase;
+}, [filteredBase]);
 
   // Filtered supervisee goals
   const filteredSuperviseeGoals = useMemo(() => {
