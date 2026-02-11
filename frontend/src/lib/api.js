@@ -182,7 +182,10 @@ async function handleResponse(response, options = {}, endpoint = '') {
 
   if (!response.ok) {
     // Handle 401 Unauthorized - try refresh token first
-    if (response.status === 401 && !options._retried) {
+    // Skip for auth endpoints (login, onboard, reset-password) - those should just throw the error
+    const isAuthEndpoint = endpoint.includes('/auth/login') || endpoint.includes('/auth/onboard') || endpoint.includes('/auth/reset-password')
+
+    if (response.status === 401 && !options._retried && !isAuthEndpoint) {
       // Don't try to refresh if this was already a refresh request
       if (!endpoint.includes('/auth/refresh')) {
         const refreshSuccess = await tryRefreshToken()
@@ -481,7 +484,12 @@ export const users = {
    */
   async list(params = {}) {
     const response = await GET('/api/users', params)
-    return response.users || []
+    return {
+      users: response.users || [],
+      total: response.total || 0,
+      page: response.page || 1,
+      per_page: response.per_page || 50
+    }
   },
 
 

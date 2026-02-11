@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Plus, Users, Search, Filter, MoreHorizontal, Edit, Trash2, Mail, Eye, Send, Key } from "lucide-react"
+import { Plus, Users, Search, Filter, MoreHorizontal, Edit, Trash2, Mail, Eye, Send, Key, ChevronLeft, ChevronRight } from "lucide-react"
 import { GET, POST } from "@/lib/api"
 import { toast } from "sonner"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -93,17 +93,31 @@ export default function UsersPage() {
   const router = useRouter()
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
-  const [searchQuery, setSearchQuery] = useState("")
+  const [searchInput, setSearchInput] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
+  const [perPage, setPerPage] = useState(10)
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', description: '', onConfirm: () => {} })
 
-  const { data: users = [], isLoading } = useUsers({
+  // Debounce search input - wait 400ms after user stops typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput)
+      setCurrentPage(1)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [searchInput])
+
+  const { data, isLoading } = useUsers({
     page: currentPage,
-    per_page: 50,
-    ...(searchQuery && { search: searchQuery }),
+    per_page: perPage,
+    ...(debouncedSearch && { search: debouncedSearch }),
     ...(statusFilter !== "all" && { status_filter: statusFilter })
   })
+  const users = data?.users || []
+  const totalUsers = data?.total || 0
+  const totalPages = Math.ceil(totalUsers / perPage)
   const { data: organizations = [] } = useOrganizations()
   const { data: roles = [] } = useRoles()
   const createMutation = useCreateUser()
@@ -246,12 +260,7 @@ export default function UsersPage() {
     name: user.name || [user.first_name, user.middle_name, user.last_name].filter(Boolean).join(' ')
   }))
 
-  const filteredUsers = enhancedUsers.filter(user => {
-    const matchesSearch = user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesStatus = statusFilter === 'all' || user.status === statusFilter
-    return matchesSearch && matchesStatus
-  })
+  // Search and status filtering is now handled server-side
 
   return (
     <PermissionGuard permission="user_view_all">
@@ -284,13 +293,13 @@ export default function UsersPage() {
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     placeholder="Search users by name or email..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
                     className="pl-9"
                   />
                 </div>
               </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={statusFilter} onValueChange={(val) => { setStatusFilter(val); setCurrentPage(1) }}>
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
@@ -312,7 +321,7 @@ export default function UsersPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Users ({filteredUsers.length})
+              Users ({totalUsers})
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -328,7 +337,7 @@ export default function UsersPage() {
                   </div>
                 ))}
               </div>
-            ) : filteredUsers.length > 0 ? (
+            ) : enhancedUsers.length > 0 ? (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -341,7 +350,7 @@ export default function UsersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredUsers.map((user) => (
+                  {enhancedUsers.map((user) => (
                     <TableRow
                       key={user.id}
                       className="cursor-pointer hover:bg-muted/50"
@@ -458,7 +467,7 @@ export default function UsersPage() {
                 <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-lg font-medium mb-2">No users found</h3>
                 <p className="text-muted-foreground mb-4">
-                  {searchQuery || statusFilter !== 'all'
+                  {searchInput || statusFilter !== 'all'
                     ? 'No users match your current filters.'
                     : 'Get started by creating your first user.'}
                 </p>
@@ -466,6 +475,49 @@ export default function UsersPage() {
                   <Plus className="mr-2 h-4 w-4" />
                   Add User
                 </Button>
+              </div>
+            )}
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between pt-4 border-t">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>Rows per page</span>
+                  <Select value={String(perPage)} onValueChange={(val) => { setPerPage(Number(val)); setCurrentPage(1) }}>
+                    <SelectTrigger className="w-[70px] h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5">5</SelectItem>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-muted-foreground">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage <= 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage >= totalPages}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
           </CardContent>

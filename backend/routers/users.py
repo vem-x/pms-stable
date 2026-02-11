@@ -123,6 +123,7 @@ async def delete_user(
 async def get_users(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
+    search: Optional[str] = Query(None, description="Search by name or email"),
     status_filter: Optional[UserStatus] = None,
     organization_id: Optional[uuid.UUID] = None,
     activated_filter: Optional[bool] = Query(None, description="Filter by activation status: true=activated, false=not activated"),
@@ -133,6 +134,7 @@ async def get_users(
     """
     List users with scope filtering
     Users only see other users within their organizational reach
+    - search: Search by name or email (case-insensitive)
     - activated_filter: true = users who have set their password, false = users who haven't (still have onboarding_token)
     """
     user = db.query(User).filter(User.id == current_user.user_id).first()
@@ -144,6 +146,16 @@ async def get_users(
 
     # Build query
     query = db.query(User).filter(User.organization_id.in_(accessible_org_ids))
+
+    # Apply search filter
+    if search and search.strip():
+        search_term = f"%{search.strip()}%"
+        query = query.filter(
+            (User.name.ilike(search_term)) |
+            (User.email.ilike(search_term)) |
+            (User.first_name.ilike(search_term)) |
+            (User.last_name.ilike(search_term))
+        )
 
     # Apply filters
     if status_filter:
