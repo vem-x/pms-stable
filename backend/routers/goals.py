@@ -98,6 +98,7 @@ async def get_goals(
     scope: Optional[GoalScope] = Query(None, description="Filter by goal scope: COMPANY_WIDE, DEPARTMENTAL, or INDIVIDUAL"),
     goal_type: Optional[GoalType] = None,
     status: Optional[GoalStatus] = None,
+    owner_id: Optional[uuid.UUID] = Query(None, description="Filter goals by owner user ID"),
     current_user: UserSession = Depends(get_current_user),
     db: Session = Depends(get_db),
     permission_service: UserPermissions = Depends(get_permission_service)
@@ -214,6 +215,9 @@ async def get_goals(
             query = query.filter(visibility_filter)
 
     # Apply additional filters
+    if owner_id:
+        query = query.filter(Goal.owner_id == owner_id)
+
     if goal_type:
         query = query.filter(Goal.type == goal_type)
 
@@ -785,8 +789,13 @@ async def create_goal(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # All goals start as ACTIVE (no approval needed)
-    initial_status = GoalStatus.ACTIVE
+    # Determine initial status based on scope and user role
+    # Individual goals by non-leadership staff require supervisor approval
+    user_role = user.role
+    if goal_data.scope == GoalScope.INDIVIDUAL and user_role and not user_role.is_leadership:
+        initial_status = GoalStatus.PENDING_APPROVAL
+    else:
+        initial_status = GoalStatus.ACTIVE
 
     # Check permission based on goal scope (individual goals don't need special permission)
     if goal_data.scope != GoalScope.INDIVIDUAL:

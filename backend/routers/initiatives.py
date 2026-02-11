@@ -1227,7 +1227,7 @@ async def download_initiative_document(
 
 @router.get("/user/{user_id}")
 async def get_user_initiatives(
-    user_id: int,
+    user_id: uuid.UUID,
     status: Optional[str] = None,
     current_user: UserSession = Depends(get_current_user),
     db: Session = Depends(get_db)
