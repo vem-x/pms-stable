@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo, useState } from "react"
+import React, { useMemo, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
   ArrowLeft,
@@ -10,19 +10,21 @@ import {
   MapPin,
   Briefcase,
   Building2,
-  Calendar,
   Target,
   ListChecks,
   Award,
   TrendingUp,
   Clock,
   CheckCircle2,
-  AlertCircle,
   Edit,
   Send,
   Key,
   Trash2,
   MoreVertical,
+  Ban,
+  CalendarOff,
+  Archive,
+  UserCheck,
 } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -47,50 +49,51 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { useUsers, useGoals, useSuperviseeGoals, useUpdateUserStatus } from "@/lib/react-query"
-import { POST } from "@/lib/api"
+import { useUser, useGoals, useOrganizations, useRoles, useUpdateUser, useUpdateUserStatus } from "@/lib/react-query"
+import { GET, POST } from "@/lib/api"
 import { toast } from "sonner"
+import { UserForm } from "@/components/dashboard/UserForm"
 
 const statusColors = {
-  PENDING_APPROVAL: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  ACTIVE: "bg-blue-100 text-blue-800 border-blue-200",
-  ACHIEVED: "bg-green-100 text-green-800 border-green-200",
-  DISCARDED: "bg-gray-100 text-gray-800 border-gray-200",
-  REJECTED: "bg-red-100 text-red-800 border-red-200",
+  PENDING_ACTIVATION: "bg-blue-100 text-blue-800",
+  ACTIVE: "bg-green-100 text-green-800",
+  SUSPENDED: "bg-red-100 text-red-800",
+  ON_LEAVE: "bg-yellow-100 text-yellow-800",
+  ARCHIVED: "bg-gray-100 text-gray-800",
 }
 
-const initiativeStatusColors = {
+const statusLabels = {
+  PENDING_ACTIVATION: "Pending Activation",
+  ACTIVE: "Active",
+  SUSPENDED: "Suspended",
+  ON_LEAVE: "On Leave",
+  ARCHIVED: "Archived",
+}
+
+const goalStatusColors = {
   PENDING_APPROVAL: "bg-yellow-100 text-yellow-800",
-  ASSIGNED: "bg-blue-100 text-blue-800",
-  PENDING: "bg-gray-100 text-gray-800",
-  ONGOING: "bg-blue-100 text-blue-800",
-  UNDER_REVIEW: "bg-purple-100 text-purple-800",
-  COMPLETED: "bg-green-100 text-green-800",
+  ACTIVE: "bg-blue-100 text-blue-800",
+  ACHIEVED: "bg-green-100 text-green-800",
+  DISCARDED: "bg-gray-100 text-gray-800",
   REJECTED: "bg-red-100 text-red-800",
-  OVERDUE: "bg-red-100 text-red-800",
 }
 
 function GoalCard({ goal }) {
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="space-y-2 flex-1">
             <CardTitle className="text-base font-semibold">{goal.title}</CardTitle>
             <div className="flex items-center gap-2 flex-wrap">
-              <Badge className={statusColors[goal.status]}>
+              <Badge className={goalStatusColors[goal.status] || ""}>
                 {goal.status?.replace(/_/g, ' ')}
               </Badge>
               {goal.quarter && goal.year && (
                 <Badge variant="outline">{goal.quarter} {goal.year}</Badge>
               )}
               {goal.tags && goal.tags.length > 0 && goal.tags.map((tag) => (
-                <Badge
-                  key={tag.id}
-                  variant="outline"
-                  className="text-xs"
-                  style={{ borderColor: tag.color, color: tag.color }}
-                >
+                <Badge key={tag.id} variant="outline" className="text-xs">
                   {tag.name}
                 </Badge>
               ))}
@@ -101,21 +104,21 @@ function GoalCard({ goal }) {
       <CardContent className="space-y-3">
         {goal.description && (
           <div
-            className="text-sm text-gray-600 line-clamp-2 prose prose-sm max-w-none"
+            className="text-sm text-muted-foreground line-clamp-2 prose prose-sm max-w-none"
             dangerouslySetInnerHTML={{ __html: goal.description }}
           />
         )}
 
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600">Progress</span>
+            <span className="text-muted-foreground">Progress</span>
             <span className="font-semibold">{goal.progress_percentage || 0}%</span>
           </div>
           <Progress value={goal.progress_percentage || 0} className="h-2" />
         </div>
 
         {(goal.start_date || goal.end_date) && (
-          <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t">
+          <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
             {goal.start_date && (
               <div className="flex items-center gap-1">
                 <Clock className="h-3.5 w-3.5" />
@@ -134,13 +137,13 @@ function GoalCard({ goal }) {
 
 function InitiativeCard({ initiative }) {
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="space-y-2 flex-1">
             <CardTitle className="text-base font-semibold">{initiative.title}</CardTitle>
             <div className="flex items-center gap-2 flex-wrap">
-              <Badge className={initiativeStatusColors[initiative.status]}>
+              <Badge variant="outline">
                 {initiative.status?.replace(/_/g, ' ')}
               </Badge>
               {initiative.urgency && (
@@ -152,18 +155,18 @@ function InitiativeCard({ initiative }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {initiative.description && (
-          <p className="text-sm text-gray-600 line-clamp-2">{initiative.description}</p>
+          <p className="text-sm text-muted-foreground line-clamp-2">{initiative.description}</p>
         )}
 
         {initiative.score && (
           <div className="flex items-center gap-2">
-            <Award className="h-4 w-4 text-yellow-600" />
+            <Award className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Score: {initiative.score}/10</span>
           </div>
         )}
 
         {initiative.due_date && (
-          <div className="flex items-center gap-1 text-xs text-gray-500 pt-2 border-t">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground pt-2 border-t">
             <Clock className="h-3.5 w-3.5" />
             Due: {new Date(initiative.due_date).toLocaleDateString()}
           </div>
@@ -199,29 +202,17 @@ export default function UserDetailPage() {
   const userId = params.id
 
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', description: '', onConfirm: () => {} })
+  const [isEditFormOpen, setIsEditFormOpen] = useState(false)
 
-  const { data: users = [], isLoading: isLoadingUsers } = useUsers()
-  const { data: allGoals = [], isLoading: isLoadingGoals } = useGoals()
+  const { data: user, isLoading: isLoadingUser } = useUser(userId)
+  const { data: userGoals = [], isLoading: isLoadingGoals } = useGoals({ owner_id: userId })
+  const { data: organizations = [] } = useOrganizations()
+  const { data: roles = [] } = useRoles()
+  const updateMutation = useUpdateUser()
   const updateStatusMutation = useUpdateUserStatus()
 
-  // Find the user
-  const user = useMemo(() => {
-    return users.find(u => u.id === userId)
-  }, [users, userId])
-
-  // Get user's goals
-  const userGoals = useMemo(() => {
-    return allGoals.filter(g => g.owner_id === userId)
-  }, [allGoals, userId])
-
-  // Get user's supervisor
-  const supervisor = useMemo(() => {
-    if (!user?.supervisor_id) return null
-    return users.find(u => u.id === user.supervisor_id)
-  }, [user, users])
-
   // Get user's organization
-  const organization = user?.organization_name || "Unknown"
+  const organization = user?.organization_name || user?.organization?.name || "Unknown"
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -232,18 +223,39 @@ export default function UserDetailPage() {
       ? Math.round(userGoals.reduce((sum, g) => sum + (g.progress_percentage || 0), 0) / totalGoals)
       : 0
 
-    return {
-      totalGoals,
-      activeGoals,
-      achievedGoals,
-      avgProgress,
-    }
+    return { totalGoals, activeGoals, achievedGoals, avgProgress }
   }, [userGoals])
+
+  // Fetch eligible supervisors from backend
+  const fetchEligibleSupervisors = useCallback(async (organizationId, userLevel) => {
+    if (!organizationId) return []
+    try {
+      const supervisors = await GET(`/api/users/${userId}/potential-supervisors`)
+      return (supervisors || []).map(u => ({
+        id: u.id,
+        name: u.name || [u.first_name, u.middle_name, u.last_name].filter(Boolean).join(' '),
+        level: u.level,
+        job_title: u.job_title,
+      }))
+    } catch {
+      return []
+    }
+  }, [userId])
 
   // Action handlers
   const handleStatusChange = (newStatus) => {
     if (!user) return
     updateStatusMutation.mutate({ id: user.id, status: newStatus })
+  }
+
+  const handleEditUser = () => {
+    setIsEditFormOpen(true)
+  }
+
+  const handleUpdate = (data) => {
+    if (user) {
+      updateMutation.mutate({ id: user.id, ...data })
+    }
   }
 
   const handleResendInvite = () => {
@@ -302,12 +314,7 @@ export default function UserDetailPage() {
     })
   }
 
-  const handleEditUser = () => {
-    // Navigate back to users page and open edit dialog
-    router.push('/dashboard/users')
-  }
-
-  if (isLoadingUsers || isLoadingGoals) {
+  if (isLoadingUser || isLoadingGoals) {
     return (
       <div className="space-y-8">
         <Skeleton className="h-12 w-64" />
@@ -324,9 +331,9 @@ export default function UserDetailPage() {
   if (!user) {
     return (
       <div className="flex flex-col items-center justify-center h-96">
-        <User className="h-16 w-16 text-gray-400 mb-4" />
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">User Not Found</h2>
-        <p className="text-gray-600 mb-4">The user you're looking for doesn't exist.</p>
+        <User className="h-16 w-16 text-muted-foreground mb-4" />
+        <h2 className="text-2xl font-bold mb-2">User Not Found</h2>
+        <p className="text-muted-foreground mb-4">The user you're looking for doesn't exist.</p>
         <Button onClick={() => router.back()}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Go Back
@@ -338,7 +345,7 @@ export default function UserDetailPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="border-b border-gray-200 pb-6">
+      <div className="border-b pb-6">
         <Button
           variant="ghost"
           onClick={() => router.back()}
@@ -350,7 +357,7 @@ export default function UserDetailPage() {
 
         <div className="flex items-start gap-6">
           <Avatar className="h-24 w-24">
-            <AvatarFallback className="text-2xl bg-blue-100 text-blue-700">
+            <AvatarFallback className="text-2xl">
               {user.name.split(' ').map(n => n[0]).join('').toUpperCase()}
             </AvatarFallback>
           </Avatar>
@@ -358,8 +365,8 @@ export default function UserDetailPage() {
           <div className="flex-1 space-y-4">
             <div className="flex items-start justify-between">
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">{user.name}</h1>
-                <p className="text-lg text-gray-600">{user.job_title || 'No title'}</p>
+                <h1 className="text-3xl font-bold">{user.name}</h1>
+                <p className="text-lg text-muted-foreground">{user.job_title || 'No title'}</p>
               </div>
 
               {/* Action Buttons */}
@@ -384,12 +391,15 @@ export default function UserDetailPage() {
                         Send Password Reset
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleStatusChange('SUSPENDED')}>
+                        <Ban className="mr-2 h-4 w-4" />
                         Suspend
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleStatusChange('ON_LEAVE')}>
+                        <CalendarOff className="mr-2 h-4 w-4" />
                         Mark as On Leave
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleStatusChange('ARCHIVED')}>
+                        <Archive className="mr-2 h-4 w-4" />
                         Archive
                       </DropdownMenuItem>
                     </>
@@ -400,27 +410,30 @@ export default function UserDetailPage() {
                         Resend Invite Link
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleStatusChange('ARCHIVED')}>
+                        <Archive className="mr-2 h-4 w-4" />
                         Archive
                       </DropdownMenuItem>
                     </>
                   ) : (
                     <>
                       <DropdownMenuItem onClick={() => handleStatusChange('ACTIVE')}>
+                        <UserCheck className="mr-2 h-4 w-4" />
                         Reactivate
                       </DropdownMenuItem>
                       {user.status !== 'ARCHIVED' && (
                         <DropdownMenuItem onClick={() => handleStatusChange('ARCHIVED')}>
+                          <Archive className="mr-2 h-4 w-4" />
                           Archive
                         </DropdownMenuItem>
                       )}
                     </>
                   )}
 
-                  {/* Delete Option - available for all statuses */}
+                  {/* Delete Option */}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={handleDeleteUser}
-                    className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                    className="text-destructive focus:text-destructive"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete Permanently
@@ -431,36 +444,36 @@ export default function UserDetailPage() {
 
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
               {user.email && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Mail className="h-4 w-4" />
                   <span>{user.email}</span>
                 </div>
               )}
               {user.phone && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Phone className="h-4 w-4" />
                   <span>{user.phone}</span>
                 </div>
               )}
-              <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Building2 className="h-4 w-4" />
                 <span>{organization}</span>
               </div>
-              {supervisor && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
+              {user.supervisor_name && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <User className="h-4 w-4" />
-                  <span>Reports to: {supervisor.name}</span>
+                  <span>Reports to: {user.supervisor_name}</span>
                 </div>
               )}
               {user.level && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Briefcase className="h-4 w-4" />
                   <span>Level: {user.level}</span>
                 </div>
               )}
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Badge className={`${user.status === 'ACTIVE' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                  {user.status}
+              <div className="flex items-center gap-2 text-sm">
+                <Badge className={statusColors[user.status] || ""}>
+                  {statusLabels[user.status] || user.status}
                 </Badge>
               </div>
             </div>
@@ -472,8 +485,8 @@ export default function UserDetailPage() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Goals</CardTitle>
-            <Target className="h-4 w-4 text-gray-600" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Goals</CardTitle>
+            <Target className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalGoals}</div>
@@ -482,31 +495,31 @@ export default function UserDetailPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Active Goals</CardTitle>
-            <TrendingUp className="h-4 w-4 text-blue-600" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Active Goals</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{stats.activeGoals}</div>
+            <div className="text-2xl font-bold">{stats.activeGoals}</div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Achieved Goals</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Achieved Goals</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.achievedGoals}</div>
+            <div className="text-2xl font-bold">{stats.achievedGoals}</div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Avg Progress</CardTitle>
-            <Award className="h-4 w-4 text-yellow-600" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg Progress</CardTitle>
+            <Award className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{stats.avgProgress}%</div>
+            <div className="text-2xl font-bold">{stats.avgProgress}%</div>
           </CardContent>
         </Card>
       </div>
@@ -520,17 +533,17 @@ export default function UserDetailPage() {
           <CardContent className="space-y-4">
             {user.skillset && (
               <div>
-                <h3 className="font-semibold text-sm text-gray-700 mb-2">Skillset</h3>
-                <p className="text-sm text-gray-600">{user.skillset}</p>
+                <h3 className="font-semibold text-sm mb-2">Skillset</h3>
+                <p className="text-sm text-muted-foreground">{user.skillset}</p>
               </div>
             )}
             {user.address && (
               <div>
-                <h3 className="font-semibold text-sm text-gray-700 mb-2 flex items-center gap-2">
+                <h3 className="font-semibold text-sm mb-2 flex items-center gap-2">
                   <MapPin className="h-4 w-4" />
                   Address
                 </h3>
-                <p className="text-sm text-gray-600">{user.address}</p>
+                <p className="text-sm text-muted-foreground">{user.address}</p>
               </div>
             )}
           </CardContent>
@@ -567,9 +580,9 @@ export default function UserDetailPage() {
                 </div>
               ) : (
                 <div className="text-center py-12">
-                  <Target className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">No goals yet</h3>
-                  <p className="text-gray-600">This user hasn't created any goals yet.</p>
+                  <Target className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No goals yet</h3>
+                  <p className="text-muted-foreground">This user hasn't created any goals yet.</p>
                 </div>
               )}
             </CardContent>
@@ -586,14 +599,25 @@ export default function UserDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="text-center py-12">
-                <ListChecks className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Coming soon</h3>
-                <p className="text-gray-600">Initiative tracking will be available here.</p>
+                <ListChecks className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">Coming soon</h3>
+                <p className="text-muted-foreground">Initiative tracking will be available here.</p>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Edit User Form Dialog */}
+      <UserForm
+        user={user}
+        isOpen={isEditFormOpen}
+        onClose={() => setIsEditFormOpen(false)}
+        onSubmit={handleUpdate}
+        organizations={organizations}
+        roles={roles}
+        onFetchSupervisors={fetchEligibleSupervisors}
+      />
 
       {/* Confirmation Dialog */}
       <ConfirmDialog

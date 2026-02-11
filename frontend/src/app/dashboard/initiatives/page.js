@@ -1604,7 +1604,8 @@ export default function InitiativesPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [perPage] = useState(20)
 
-  const { data: users = [], isLoading: isLoadingUsers } = useUsers()
+  const { data: usersData, isLoading: isLoadingUsers } = useUsers()
+  const users = usersData?.users || []
 
   // Check if user has supervisees
   const { data: superviseeCheck } = useHasSupervisees()

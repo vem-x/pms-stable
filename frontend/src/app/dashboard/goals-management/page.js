@@ -298,7 +298,7 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit }) {
         description: "",
         scope: "COMPANY_WIDE",
         type: "QUARTERLY",
-        kpis: "",
+        kpis: [],
         difficulty_level: 3,
         quarter: currentQuarter,
         year: currentYear,

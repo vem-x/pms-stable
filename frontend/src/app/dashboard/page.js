@@ -412,7 +412,8 @@ function SupervisorDashboard({ user }) {
   const { data: teamInitiativesData } = useSuperviseeInitiatives()
   const { data: teamGoalsData } = useSuperviseeGoals()
   const { data: goalsData } = useGoals({})
-  const { data: users = [] } = useUsers()
+  const { data: usersData } = useUsers()
+  const users = usersData?.users || []
 
   const myInitiatives = myInitiativesData?.initiatives || []
   const teamInitiatives = teamInitiativesData || []
@@ -657,7 +658,8 @@ function SupervisorDashboard({ user }) {
 
 export default function Dashboard() {
   const { user } = useAuth()
-  const { data: users = [] } = useUsers()
+  const { data: usersData } = useUsers()
+  const users = usersData?.users || []
 
   const supervisees = useMemo(() => {
     if (!user?.user_id || !users || users.length === 0) return []

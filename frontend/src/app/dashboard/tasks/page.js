@@ -124,7 +124,8 @@ function TaskForm({ task, isOpen, onClose, onSubmit }) {
   const [goalOpen, setGoalOpen] = useState(false)
   const [assigneeOpen, setAssigneeOpen] = useState(false)
 
-  const { data: users = [] } = useUsers()
+  const { data: usersData } = useUsers()
+  const users = usersData?.users || []
   const { data: goals = [] } = useGoals()
 
   // Reset files when form opens/closes

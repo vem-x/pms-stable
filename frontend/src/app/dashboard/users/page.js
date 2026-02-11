@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Plus, Users, Search, Filter, MoreHorizontal, Edit, Trash2, Mail, Eye, Send, Key, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Users, Search, Filter, MoreHorizontal, Edit, Trash2, Mail, Eye, Send, Key, ChevronLeft, ChevronRight, Ban, CalendarOff, Archive, UserCheck } from "lucide-react"
 import { GET, POST } from "@/lib/api"
 import { toast } from "sonner"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -415,12 +415,15 @@ export default function UsersPage() {
                                   Send Password Reset
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleStatusChange(user, 'SUSPENDED'); }}>
+                                  <Ban className="mr-2 h-4 w-4" />
                                   Suspend
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleStatusChange(user, 'ON_LEAVE'); }}>
+                                  <CalendarOff className="mr-2 h-4 w-4" />
                                   Mark as On Leave
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleStatusChange(user, 'ARCHIVED'); }}>
+                                  <Archive className="mr-2 h-4 w-4" />
                                   Archive
                                 </DropdownMenuItem>
                               </>
@@ -431,16 +434,19 @@ export default function UsersPage() {
                                   Resend Invite Link
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleStatusChange(user, 'ARCHIVED'); }}>
+                                  <Archive className="mr-2 h-4 w-4" />
                                   Archive
                                 </DropdownMenuItem>
                               </>
                             ) : (
                               <>
                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleStatusChange(user, 'ACTIVE'); }}>
+                                  <UserCheck className="mr-2 h-4 w-4" />
                                   Reactivate
                                 </DropdownMenuItem>
                                 {user.status !== 'ARCHIVED' && (
                                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleStatusChange(user, 'ARCHIVED'); }}>
+                                    <Archive className="mr-2 h-4 w-4" />
                                     Archive
                                   </DropdownMenuItem>
                                 )}

@@ -919,7 +919,7 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
   }
 
   const potentialParents = goals.filter((g) =>
-    (g.type === "YEARLY" || g.type === "QUARTERLY" || g.type === "DEPARTMENTAL") && g.status === "ACTIVE"
+    g.scope === "DEPARTMENTAL" && g.status === "ACTIVE"
   )
 
   return (
@@ -1754,7 +1754,8 @@ export default function GoalsPage() {
 
   const { data: goals = [], isLoading } = useGoals(scopeParams)
   const { data: superviseeGoals = [], refetch: refetchSuperviseeGoals } = useSuperviseeGoals()
-  const { data: users = [], isLoading: isLoadingUsers } = useUsers()
+  const { data: usersData, isLoading: isLoadingUsers } = useUsers()
+  const users = usersData?.users || []
   const { data: organizations = [] } = useOrganizations()
   const { data: tags = [] } = useGoalTags()
 
