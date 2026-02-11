@@ -43,7 +43,7 @@ __pycache__/
 *$py.class
 *.so
 
-alembic/versions/*
+backend/alembic/versions/*
 docs/
 
 # Virtual environments
