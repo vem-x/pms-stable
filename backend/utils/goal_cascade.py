@@ -85,18 +85,17 @@ class GoalCascadeService:
 
         goal.progress_percentage = new_percentage
 
+        # 100% progress → mark COMPLETED (not ACHIEVED).
+        # Achieved bool is set separately by the supervisor via /assess endpoint.
+        if new_percentage == 100 and goal.status == GoalStatus.ACTIVE:
+            goal.status = GoalStatus.COMPLETED
+
         self.db.add(progress_report)
         self.db.commit()
 
-        # Check if this update should trigger achievement
-        if new_percentage == 100 and goal.status == GoalStatus.ACTIVE:
-            goal.status = GoalStatus.ACHIEVED
-            goal.achieved_at = datetime.utcnow()
-            self.db.commit()
-
-            # Check parent goal cascade
-            if goal.parent_goal_id:
-                self.check_goal_auto_achievement(goal.parent_goal_id)
+        # If this goal reached 100%, check parent cascade.
+        if new_percentage == 100 and goal.parent_goal_id:
+            self.check_goal_auto_achievement(goal.parent_goal_id)
 
         # Send notifications
         self.notification_service.notify_goal_progress_updated(goal, progress_report)

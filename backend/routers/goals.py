@@ -16,7 +16,8 @@ from schemas.goals import (
     GoalCreate, GoalUpdate, GoalProgressUpdate, GoalStatusUpdate,
     Goal as GoalSchema, GoalWithChildren, GoalProgressReport, GoalList, GoalStats,
     GoalApproval, FreezeGoalsRequest, UnfreezeGoalsRequest, FreezeGoalsResponse,
-    GoalFreezeLog as GoalFreezeLogSchema
+    GoalFreezeLog as GoalFreezeLogSchema,
+    KPIItem, GoalAssessmentRequest,
 )
 from schemas.auth import UserSession
 from utils.auth import get_current_user
@@ -35,25 +36,82 @@ def get_goal_service(db: Session = Depends(get_db)) -> GoalCascadeService:
 def get_notification_service(db: Session = Depends(get_db)) -> NotificationService:
     return NotificationService(db)
 
-def serialize_kpis(kpis: Optional[List[str]]) -> Optional[str]:
-    """Convert KPI list to JSON string for database storage"""
-    if kpis is None or len(kpis) == 0:
+def serialize_kpis(kpis) -> Optional[str]:
+    """
+    Convert a list of KPIItem objects (or legacy strings) to a JSON string
+    for database storage. Returns None for empty / null input.
+    """
+    if not kpis:
         return None
-    # Filter out empty strings
-    filtered_kpis = [kpi.strip() for kpi in kpis if kpi and kpi.strip()]
-    if not filtered_kpis:
-        return None
-    return json.dumps(filtered_kpis)
+    items = []
+    for k in kpis:
+        if isinstance(k, KPIItem):
+            items.append(k.dict())
+        elif isinstance(k, dict) and k.get('description', '').strip():
+            # Ensure id exists
+            if not k.get('id'):
+                k = {**k, 'id': str(uuid.uuid4())}
+            items.append(k)
+        elif isinstance(k, str) and k.strip():
+            # Legacy plain string → structured wrapper
+            items.append({
+                'id': str(uuid.uuid4()),
+                'description': k.strip(),
+                'target_value': None,
+                'target_unit': None,
+                'actual_value': None,
+                'achieved': False,
+            })
+    return json.dumps(items) if items else None
 
-def deserialize_kpis(kpis_json: Optional[str]) -> Optional[List[str]]:
-    """Convert JSON string from database to KPI list"""
+def deserialize_kpis(kpis_json: Optional[str]) -> Optional[list]:
+    """
+    Convert JSON string from database back to a list of KPI dicts.
+    Handles both structured (new) and plain-string (legacy) formats.
+    """
     if not kpis_json:
         return None
     try:
-        return json.loads(kpis_json)
+        data = json.loads(kpis_json)
+        if not isinstance(data, list):
+            return None
+        result = []
+        for item in data:
+            if isinstance(item, dict):
+                result.append(item)
+            elif isinstance(item, str) and item.strip():
+                result.append({
+                    'id': str(uuid.uuid4()),
+                    'description': item.strip(),
+                    'target_value': None,
+                    'target_unit': None,
+                    'actual_value': None,
+                    'achieved': False,
+                })
+        return result or None
     except (json.JSONDecodeError, TypeError):
-        # Backward compatibility: if it's not valid JSON, treat as single item
-        return [kpis_json] if kpis_json else None
+        return None
+
+def check_initiatives_completed(goal_id: uuid.UUID, db: Session):
+    """
+    Raises HTTPException(400) if any initiative linked to this goal is not COMPLETED.
+    Returns silently if all linked initiatives are COMPLETED or there are none.
+    """
+    from models import Initiative, InitiativeStatus
+    linked = db.query(Initiative).filter(
+        Initiative.goal_id == goal_id
+    ).all()
+    if not linked:
+        return  # No linked initiatives — no block
+    incomplete = [i for i in linked if i.status != InitiativeStatus.COMPLETED]
+    if incomplete:
+        names = ", ".join(f'"{i.title}"' for i in incomplete[:3])
+        suffix = f" (+{len(incomplete) - 3} more)" if len(incomplete) > 3 else ""
+        raise HTTPException(
+            status_code=400,
+            detail=f"All linked initiatives must be completed first. Incomplete: {names}{suffix}"
+        )
+
 
 def enrich_goal_dict(goal_dict: dict, goal: Goal, db: Session) -> dict:
     """Enrich goal dictionary with deserialized KPIs and related names"""
@@ -1027,6 +1085,10 @@ async def update_goal_progress(
         if goal.created_by != user.id:
             raise HTTPException(status_code=403, detail="Cannot update progress for this goal")
 
+    # Block 100% progress if any linked initiative is not completed
+    if progress_data.new_percentage == 100:
+        check_initiatives_completed(goal_id, db)
+
     try:
         # Use cascade service to update progress
         success = goal_service.update_goal_progress(
@@ -1074,6 +1136,9 @@ async def update_goal_status(
     if status_data.status == GoalStatus.DISCARDED:
         success = goal_service.discard_goal(goal_id, "Manual discard", user.id)
     else:
+        if status_data.status == GoalStatus.ACHIEVED:
+            check_initiatives_completed(goal_id, db)
+
         goal.status = status_data.status
         if status_data.status == GoalStatus.ACHIEVED:
             goal.achieved_at = db.func.now()
@@ -1296,6 +1361,89 @@ async def delete_goal(
     db.commit()
 
     return {"message": "Goal deleted successfully"}
+
+
+@router.put("/{goal_id}/assess", response_model=GoalSchema)
+async def assess_goal(
+    goal_id: uuid.UUID,
+    assessment: GoalAssessmentRequest,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    permission_service: UserPermissions = Depends(get_permission_service)
+):
+    """
+    Supervisor submits KPI actuals for a goal.
+    - Caller must be the supervisor of the goal owner (or have goal_edit permission).
+    - For each KPI in the request, updates actual_value and achieved.
+    - Goal score is derived automatically from the KPI actuals; no manual score entry.
+    - Cannot assess a discarded goal.
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    goal = db.query(Goal).filter(Goal.id == goal_id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+
+    # Only individual goals are assessed by supervisors
+    if goal.scope != GoalScope.INDIVIDUAL:
+        raise HTTPException(status_code=400, detail="Only individual goals can be assessed by supervisors")
+
+    # Goal must be COMPLETED before the supervisor can score it
+    if goal.status != GoalStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Goal must be marked as Complete before it can be assessed")
+
+    # Permission: goal creator, goal owner, user with goal_edit or goal_status_change
+    can_assess = (
+        goal.created_by == user.id
+        or goal.owner_id == user.id
+        or permission_service.user_has_permission(user, SystemPermissions.GOAL_EDIT)
+        or permission_service.user_has_permission(user, SystemPermissions.GOAL_STATUS_CHANGE)
+    )
+    if not can_assess:
+        raise HTTPException(status_code=403, detail="You do not have permission to assess this goal")
+
+    # All linked initiatives must be completed before assessment
+    check_initiatives_completed(goal_id, db)
+
+    # Load current KPIs
+    current_kpis = deserialize_kpis(goal.kpis) or []
+
+    # Build a lookup by id
+    kpi_map = {k['id']: k for k in current_kpis if isinstance(k, dict)}
+
+    # Apply assessments
+    for a in assessment.kpi_assessments:
+        if a.id in kpi_map:
+            kpi_map[a.id]['actual_value'] = a.actual_value
+            kpi_map[a.id]['achieved'] = a.achieved
+
+    updated_kpis = list(kpi_map.values())
+    goal.kpis = json.dumps(updated_kpis)
+
+    # Determine achieved bool from avg KPI ratio (status stays COMPLETED)
+    assessable = [k for k in updated_kpis if k.get('target_value') is not None]
+    assessed   = [k for k in assessable if k.get('actual_value') is not None]
+    if assessed:
+        scores = [
+            min(k['actual_value'] / k['target_value'], 1.0) if k['target_value'] else 0
+            for k in assessed
+        ]
+        avg_ratio = sum(scores) / len(scores)
+        goal.achieved = avg_ratio >= 0.8
+    else:
+        goal.achieved = False
+
+    if goal.achieved:
+        goal.achieved_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(goal)
+
+    goal_dict = goal.__dict__.copy()
+    goal_dict = enrich_goal_dict(goal_dict, goal, db)
+    return GoalSchema(**goal_dict)
 
 
 @router.post("/{goal_id}/freeze")

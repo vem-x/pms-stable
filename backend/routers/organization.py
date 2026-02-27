@@ -3,7 +3,7 @@ Organization Management API Router
 Based on CLAUDE.md specification
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid
@@ -27,20 +27,33 @@ def get_permission_service(db: Session = Depends(get_db)) -> UserPermissions:
 async def get_organizations(
     current_user: UserSession = Depends(get_current_user),
     db: Session = Depends(get_db),
-    permission_service: UserPermissions = Depends(get_permission_service)
+    permission_service: UserPermissions = Depends(get_permission_service),
+    level: Optional[str] = Query(None, description="Filter by organization level (GLOBAL, DIRECTORATE, DEPARTMENT, DIVISION, UNIT)"),
+    parent_id: Optional[uuid.UUID] = Query(None, description="Filter by parent organization ID"),
 ):
     """
-    Get list of organizations accessible to current user
-    Filtered by user's organizational scope
+    Get list of organizations accessible to current user.
+    Optionally filter by level and/or parent_id.
     """
     user = db.query(User).filter(User.id == current_user.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     accessible_org_ids = permission_service.get_accessible_organizations(user)
-    organizations = db.query(Organization).filter(Organization.id.in_(accessible_org_ids)).all()
+    query = db.query(Organization).filter(Organization.id.in_(accessible_org_ids))
 
-    return organizations
+    if level is not None:
+        level_upper = level.upper()
+        try:
+            level_enum = OrganizationLevel(level_upper)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid level '{level}'. Must be one of: GLOBAL, DIRECTORATE, DEPARTMENT, DIVISION, UNIT")
+        query = query.filter(Organization.level == level_enum)
+
+    if parent_id is not None:
+        query = query.filter(Organization.parent_id == parent_id)
+
+    return query.all()
 
 @router.get("/tree", response_model=OrganizationTree)
 async def get_organization_tree(

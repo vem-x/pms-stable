@@ -869,7 +869,7 @@ async def get_organization_performance(
     if "performance_view_all" not in current_user.permissions:
         raise HTTPException(status_code=403, detail="Insufficient permissions to view organization performance")
 
-    # Get review cycle (use most recent active if not specified)
+    # Get review cycle (use most recent active/completed if not specified)
     from models import UserStatus, ReviewCycleStatus, InitiativeStatus
     cycle = None
     if cycle_id:
@@ -877,13 +877,13 @@ async def get_organization_performance(
         if not cycle:
             raise HTTPException(status_code=404, detail="Review cycle not found")
     else:
-        # Get most recent active or completed cycle
+        # Prefer the most recent active or completed cycle
         cycle = db.query(ReviewCycle).filter(
             ReviewCycle.status.in_([ReviewCycleStatus.ACTIVE, ReviewCycleStatus.COMPLETED])
         ).order_by(desc(ReviewCycle.start_date)).first()
-
-    if not cycle:
-        raise HTTPException(status_code=404, detail="No active review cycle found")
+        # Fall back to any cycle (e.g. draft) so employees are always visible
+        if not cycle:
+            cycle = db.query(ReviewCycle).order_by(desc(ReviewCycle.start_date)).first()
 
     # Build base query for employees
     employees_query = db.query(User).filter(User.status == UserStatus.ACTIVE)

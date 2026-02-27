@@ -42,7 +42,8 @@ class GoalType(str, enum.Enum):
 class GoalStatus(str, enum.Enum):
     PENDING_APPROVAL = "PENDING_APPROVAL"  # Individual goals awaiting approval
     ACTIVE = "ACTIVE"
-    ACHIEVED = "ACHIEVED"
+    COMPLETED = "COMPLETED"  # Assessment submitted; avg KPI ratio < 80%
+    ACHIEVED = "ACHIEVED"    # Assessment submitted; avg KPI ratio >= 80%
     DISCARDED = "DISCARDED"
     REJECTED = "REJECTED"  # Individual goals rejected by supervisor/HOD
 
@@ -281,6 +282,7 @@ class Goal(Base):
     approved_at = Column(DateTime(timezone=True))
     approved_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
+    achieved = Column(Boolean, default=False)  # Set by supervisor assess; True if avg KPI ratio >= 80%
     achieved_at = Column(DateTime(timezone=True))
     discarded_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -813,7 +815,7 @@ class ReviewResponse(Base):
     __tablename__ = "review_responses"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    rating = Column(Integer, nullable=False)  # 1-5 scale
+    rating = Column(Integer, nullable=False)  # 1-10 scale
     comment = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -829,7 +831,7 @@ class ReviewResponse(Base):
     # Constraints
     __table_args__ = (
         UniqueConstraint('assignment_id', 'question_id', name='unique_response'),
-        CheckConstraint("rating BETWEEN 1 AND 5", name='valid_rating')
+        CheckConstraint("rating BETWEEN 1 AND 10", name='valid_rating')
     )
 
 class ReviewScore(Base):

@@ -1,8 +1,43 @@
 from pydantic import BaseModel, Field, validator
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import datetime, date
 from enum import Enum
 import uuid
+
+
+# ─── KPI Item ──────────────────────────────────────────────────────────────
+
+class KPIItem(BaseModel):
+    """A single measurable KPI attached to a goal."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    description: str = Field(..., min_length=1)
+    target_value: Optional[float] = None   # e.g. 30 (for "30%")
+    target_unit: Optional[str] = None      # e.g. "%", "count", "NGN", "days"
+    actual_value: Optional[float] = None   # supervisor fills this during assessment
+    achieved: bool = False                 # supervisor checkbox
+
+    class Config:
+        from_attributes = True
+
+    def score(self) -> Optional[float]:
+        """Returns KPI score 0-5. None if not yet assessed."""
+        if self.actual_value is None or not self.target_value:
+            return None
+        ratio = min(self.actual_value / self.target_value, 1.0)
+        return round(ratio * 5, 4)
+
+
+class KPIAssessment(BaseModel):
+    """Payload for supervisor to assess a single KPI."""
+    id: str
+    actual_value: float
+    achieved: bool = False
+
+
+class GoalAssessmentRequest(BaseModel):
+    """Supervisor submits actual values for all KPIs on a goal."""
+    kpi_assessments: List[KPIAssessment]
+
 
 class GoalScope(str, Enum):
     COMPANY_WIDE = "COMPANY_WIDE"  # Organizational-level goals
@@ -16,6 +51,7 @@ class GoalType(str, Enum):
 class GoalStatus(str, Enum):
     PENDING_APPROVAL = "PENDING_APPROVAL"
     ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
     ACHIEVED = "ACHIEVED"
     DISCARDED = "DISCARDED"
     REJECTED = "REJECTED"
@@ -29,7 +65,7 @@ class Quarter(str, Enum):
 class GoalBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=1000)
     description: Optional[str] = None  # Supports rich text (HTML)
-    kpis: Optional[List[str]] = None  # Key Performance Indicators as line items
+    kpis: Optional[List[KPIItem]] = None  # Structured KPIs with target values
     scope: GoalScope
     type: GoalType
     start_date: Optional[date] = None
@@ -78,7 +114,7 @@ class GoalCreate(GoalBase):
 class GoalUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=1000)
     description: Optional[str] = None
-    kpis: Optional[List[str]] = None
+    kpis: Optional[List[KPIItem]] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     tag_ids: Optional[List[uuid.UUID]] = None
@@ -102,7 +138,7 @@ class GoalInDB(BaseModel):
     id: uuid.UUID
     title: str
     description: Optional[str] = None
-    kpis: Optional[List[str]] = None
+    kpis: Optional[List[KPIItem]] = None
     scope: Optional[GoalScope] = None  # Nullable for backward compatibility
     type: GoalType
     start_date: Optional[date] = None
@@ -115,6 +151,7 @@ class GoalInDB(BaseModel):
     parent_goal_id: Optional[uuid.UUID] = None
     created_by: uuid.UUID
     owner_id: Optional[uuid.UUID] = None
+    achieved: bool = False
     frozen: bool = False
     frozen_at: Optional[datetime] = None
     frozen_by: Optional[uuid.UUID] = None
@@ -128,21 +165,48 @@ class GoalInDB(BaseModel):
 
     @validator('kpis', pre=True)
     def handle_empty_kpis(cls, v):
-        """Convert empty string or invalid JSON to None"""
+        """
+        Parse KPIs from DB (stored as JSON string).
+        Handles:
+          - None / empty string         → None
+          - List of dicts (structured)  → passed through as KPIItem list
+          - List of strings (legacy)    → wrapped into KPIItem-compatible dicts
+          - JSON string of either       → parsed then normalised
+        """
+        import json as _json
+        import uuid as _uuid
+
         if v == '' or v is None:
             return None
-        # If it's already a list, return it
-        if isinstance(v, list):
-            return v
-        # If it's a string, try to parse as JSON
+
+        # Resolve JSON string first
         if isinstance(v, str):
             try:
-                import json
-                return json.loads(v)
-            except (json.JSONDecodeError, ValueError):
-                # Invalid JSON, return None
+                v = _json.loads(v)
+            except (_json.JSONDecodeError, ValueError):
                 return None
-        return v
+
+        if not isinstance(v, list):
+            return None
+
+        result = []
+        for item in v:
+            if isinstance(item, dict):
+                # Already structured — ensure id exists
+                if 'id' not in item or not item['id']:
+                    item = {**item, 'id': str(_uuid.uuid4())}
+                result.append(item)
+            elif isinstance(item, str) and item.strip():
+                # Legacy plain-text KPI → wrap with empty targets
+                result.append({
+                    'id': str(_uuid.uuid4()),
+                    'description': item.strip(),
+                    'target_value': None,
+                    'target_unit': None,
+                    'actual_value': None,
+                    'achieved': False,
+                })
+        return result or None
 
     class Config:
         from_attributes = True

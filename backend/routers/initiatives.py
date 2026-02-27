@@ -1286,7 +1286,8 @@ async def get_user_initiatives(
             "feedback": initiative.feedback,
             "due_date": initiative.due_date.isoformat() if initiative.due_date else None,
             "created_at": initiative.created_at.isoformat() if initiative.created_at else None,
-            "created_by": initiative.created_by
+            "created_by": initiative.created_by,
+            "goal_id": str(initiative.goal_id) if initiative.goal_id else None,
         }
         initiative_list.append(initiative_dict)
 
