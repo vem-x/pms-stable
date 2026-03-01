@@ -16,6 +16,10 @@ class KPIItem(BaseModel):
     actual_value: Optional[float] = None   # supervisor fills this during assessment
     achieved: bool = False                 # supervisor checkbox
 
+    @validator('achieved', pre=True)
+    def coerce_achieved(cls, v):
+        return bool(v) if v is not None else False
+
     class Config:
         from_attributes = True
 
@@ -162,6 +166,11 @@ class GoalInDB(BaseModel):
     discarded_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+
+    @validator('achieved', 'frozen', pre=True)
+    def coerce_bool(cls, v):
+        """DB rows created before the NOT NULL constraint may have NULL here."""
+        return bool(v) if v is not None else False
 
     @validator('kpis', pre=True)
     def handle_empty_kpis(cls, v):
