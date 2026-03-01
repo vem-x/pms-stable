@@ -43,7 +43,7 @@ __pycache__/
 *$py.class
 *.so
 
-backend/alembic/versions/*
+# backend/alembic/versions/*  # removed — migration files must be tracked
 docs/
 
 # Virtual environments
