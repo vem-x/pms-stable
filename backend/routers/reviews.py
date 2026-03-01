@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_, desc, asc
 from typing import List, Optional, Dict, Any
 from database import get_db
-from models import User, ReviewCycle, Review, PeerReview, Initiative, InitiativeAssignment, Goal, Organization, ReviewTrait, ReviewQuestion, ReviewCycleTrait, ReviewAssignment, ReviewResponse as ReviewResponseModel, ReviewScore, PerformanceScore, ReviewCycleStatus
+from models import User, ReviewCycle, Review, Initiative, InitiativeAssignment, Goal, Organization, ReviewTrait, ReviewQuestion, ReviewCycleTrait, ReviewAssignment, ReviewResponse as ReviewResponseModel, ReviewScore, PerformanceScore, ReviewCycleStatus
 from routers.auth import get_current_user
 from utils.permissions import UserPermissions
 from pydantic import BaseModel
@@ -109,27 +109,6 @@ class ReviewResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class PeerReviewCreate(BaseModel):
-    cycle_id: int
-    reviewer_id: int
-    reviewee_id: int
-    assignment_rationale: Optional[dict] = None
-
-class PeerReviewResponse(BaseModel):
-    id: int
-    cycle_id: int
-    reviewer_id: int
-    reviewee_id: int
-    responses: Optional[dict]
-    collaboration_score: Optional[float]
-    status: str
-    deadline: Optional[datetime]
-    created_at: datetime
-    submitted_at: Optional[datetime]
-
-    class Config:
-        from_attributes = True
-
 # Review Cycle endpoints
 @router.get("/cycles", response_model=List[ReviewCycleResponse])
 async def get_review_cycles(
@@ -195,8 +174,6 @@ async def create_review_cycle(
         components=cycle_data.components or {
             "self_review": True,
             "supervisor_review": True,
-            "peer_review": True,
-            "peer_count": 5,
             "auto_assign": True
         },
         ai_assistance=cycle_data.ai_assistance or {},
@@ -556,81 +533,6 @@ async def submit_review(
     
     return {"message": "Review submitted successfully"}
 
-# Peer Review endpoints
-@router.get("/peer", response_model=List[PeerReviewResponse])
-async def get_peer_reviews(
-    cycle_id: Optional[int] = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get peer reviews where current user is reviewer or reviewee"""
-    query = db.query(PeerReview).filter(
-        (PeerReview.reviewer_id == current_user.user_id) |
-        (PeerReview.reviewee_id == current_user.user_id)
-    )
-    
-    if cycle_id:
-        query = query.filter(PeerReview.cycle_id == cycle_id)
-    
-    peer_reviews = query.all()
-    return peer_reviews
-
-@router.post("/peer", response_model=PeerReviewResponse)
-async def create_peer_review(
-    peer_review_data: PeerReviewCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Create a peer review assignment"""
-    permission_engine = get_permission_engine(db)
-    
-    if not permission_engine.check_permission(current_user, "reviews:create:peer"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions to create peer reviews"
-        )
-    
-    # Get reviewer and reviewee
-    reviewer = db.query(User).filter(User.id == peer_review_data.reviewer_id).first()
-    reviewee = db.query(User).filter(User.id == peer_review_data.reviewee_id).first()
-    
-    if not reviewer or not reviewee:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reviewer or reviewee not found"
-        )
-    
-    # Enforce department-only peer reviews (unless superuser)
-    if not current_user.is_superuser:
-        # Check if both reviewer and reviewee are in the same department
-        if (reviewer.organization_id != reviewee.organization_id or
-            reviewer.organization_id is None or
-            reviewee.organization_id is None):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Peer reviews are only allowed within the same department"
-            )
-
-        # Also check if the current user is in the same department (for assignment)
-        if (current_user.organization_id != reviewer.organization_id):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only assign peer reviews within your department"
-            )
-    
-    peer_review = PeerReview(
-        cycle_id=peer_review_data.cycle_id,
-        reviewer_id=peer_review_data.reviewer_id,
-        reviewee_id=peer_review_data.reviewee_id,
-        assignment_rationale=peer_review_data.assignment_rationale
-    )
-    
-    db.add(peer_review)
-    db.commit()
-    db.refresh(peer_review)
-    
-    return peer_review
-
 def _initialize_cycle_participants(cycle: ReviewCycle, db: Session) -> List[User]:
     """Initialize participants for a review cycle based on target population"""
     query = db.query(User).filter(User.is_active == True)
@@ -678,8 +580,8 @@ async def generate_cycle_analytics(
     
     # Get all reviews for this cycle
     reviews = db.query(Review).filter(Review.cycle_id == cycle_id).all()
-    peer_reviews = db.query(PeerReview).filter(PeerReview.cycle_id == cycle_id).all()
-    
+    peer_reviews = []
+
     analytics = {
         "cycle_overview": _generate_cycle_overview(cycle, reviews, peer_reviews),
         "participation_analysis": _analyze_participation(reviews, peer_reviews),
@@ -739,8 +641,8 @@ async def get_bias_detection_report(
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     
     reviews = db.query(Review).filter(Review.cycle_id == cycle_id).all()
-    peer_reviews = db.query(PeerReview).filter(PeerReview.cycle_id == cycle_id).all()
-    
+    peer_reviews = []
+
     bias_report = {
         "overall_bias_score": _calculate_overall_bias_score(reviews, peer_reviews),
         "bias_types": {
@@ -819,21 +721,18 @@ async def get_performance_dashboard(
     
     # Get reviews for the user
     reviews_query = db.query(Review).filter(Review.reviewee_id == user_id)
-    peer_reviews_query = db.query(PeerReview).filter(PeerReview.reviewee_id == user_id)
-    
+
     # Apply time filter
     if time_period == "current_year":
         start_date = datetime.now().replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
         reviews_query = reviews_query.filter(Review.created_at >= start_date)
-        peer_reviews_query = peer_reviews_query.filter(PeerReview.created_at >= start_date)
     elif time_period == "last_6_months":
         start_date = datetime.now() - timedelta(days=180)
         reviews_query = reviews_query.filter(Review.created_at >= start_date)
-        peer_reviews_query = peer_reviews_query.filter(PeerReview.created_at >= start_date)
-    
+
     reviews = reviews_query.all()
-    peer_reviews = peer_reviews_query.all()
-    
+    peer_reviews = []
+
     dashboard = {
         "user_profile": {
             "id": user.id,
@@ -1279,18 +1178,7 @@ async def save_review_responses(
         db.commit()
         
         return {"message": "Responses saved successfully"}
-    
-    # Try peer review
-    peer_review = db.query(PeerReview).filter(PeerReview.id == assignment_id).first()
-    if peer_review:
-        if peer_review.reviewer_id != current_user.user_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        peer_review.responses = responses
-        db.commit()
-        
-        return {"message": "Responses saved successfully"}
-    
+
     raise HTTPException(status_code=404, detail="Assignment not found")
 
 # Removed duplicate submit endpoint - using the one at line 3906 instead
@@ -1313,10 +1201,10 @@ async def get_cycle_analytics(
         if cycle.created_by != current_user.user_id:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
     
-    # Get all reviews and peer reviews for this cycle
+    # Get all reviews for this cycle
     reviews = db.query(Review).filter(Review.cycle_id == cycle_id).all()
-    peer_reviews = db.query(PeerReview).filter(PeerReview.cycle_id == cycle_id).all()
-    
+    peer_reviews = []
+
     analytics = _generate_comprehensive_cycle_analytics(cycle, reviews, peer_reviews, db)
     
     return analytics
@@ -1339,12 +1227,10 @@ async def get_cycle_progress(
             raise HTTPException(status_code=403, detail="Insufficient permissions")
     
     reviews = db.query(Review).filter(Review.cycle_id == cycle_id).all()
-    peer_reviews = db.query(PeerReview).filter(PeerReview.cycle_id == cycle_id).all()
-    
-    total_reviews = len(reviews) + len(peer_reviews)
-    completed_reviews = len([r for r in reviews if r.status in ['completed', 'submitted']]) + \
-                      len([r for r in peer_reviews if r.status in ['completed', 'submitted']])
-    
+
+    total_reviews = len(reviews)
+    completed_reviews = len([r for r in reviews if r.status in ['completed', 'submitted']])
+
     progress = {
         "cycle_id": cycle_id,
         "total_participants": len(set([r.reviewee_id for r in reviews])),
@@ -1360,10 +1246,6 @@ async def get_cycle_progress(
             "supervisor_reviews": {
                 "total": len([r for r in reviews if r.type == 'supervisor']),
                 "completed": len([r for r in reviews if r.type == 'supervisor' and r.status in ['completed', 'submitted']])
-            },
-            "peer_reviews": {
-                "total": len(peer_reviews),
-                "completed": len([r for r in peer_reviews if r.status in ['completed', 'submitted']])
             }
         },
         "timeline": {
@@ -1451,7 +1333,7 @@ async def get_cycle_user_scores(
 
 # Helper functions for advanced features
 
-def _generate_cycle_overview(cycle: ReviewCycle, reviews: List[Review], peer_reviews: List[PeerReview]) -> dict:
+def _generate_cycle_overview(cycle: ReviewCycle, reviews: List[Review], peer_reviews: List) -> dict:
     """Generate comprehensive cycle overview"""
     return {
         "total_participants": len(set([r.reviewee_id for r in reviews])),
@@ -1466,7 +1348,7 @@ def _generate_cycle_overview(cycle: ReviewCycle, reviews: List[Review], peer_rev
         }
     }
 
-def _analyze_participation(reviews: List[Review], peer_reviews: List[PeerReview]) -> dict:
+def _analyze_participation(reviews: List[Review], peer_reviews: List) -> dict:
     """Analyze participation patterns"""
     return {
         "participation_by_type": {
@@ -1491,7 +1373,7 @@ def _analyze_performance_patterns(reviews: List[Review]) -> dict:
         "outlier_analysis": _identify_performance_outliers(reviews)
     }
 
-def _detect_and_analyze_bias(reviews: List[Review], peer_reviews: List[PeerReview]) -> dict:
+def _detect_and_analyze_bias(reviews: List[Review], peer_reviews: List) -> dict:
     """Comprehensive bias detection and analysis"""
     return {
         "overall_bias_risk": _calculate_overall_bias_risk(reviews, peer_reviews),
@@ -2413,38 +2295,14 @@ async def initiate_multi_source_feedback(
             )
             db.add(supervisor_review)
     
-    # Peer feedback
-    if feedback_sources.get("peer_ids"):
-        for peer_id in feedback_sources["peer_ids"]:
-            peer_review = PeerReview(
-                cycle_id=cycle.id,
-                reviewer_id=peer_id,
-                reviewee_id=user_id,
-                deadline=cycle.end_date
-            )
-            db.add(peer_review)
-    
-    # Subordinate feedback
-    if feedback_sources.get("subordinate_ids"):
-        for subordinate_id in feedback_sources["subordinate_ids"]:
-            subordinate_review = PeerReview(
-                cycle_id=cycle.id,
-                reviewer_id=subordinate_id,
-                reviewee_id=user_id,
-                deadline=cycle.end_date
-            )
-            db.add(subordinate_review)
-    
     db.commit()
-    
+
     return {
         "message": "360-degree feedback initiated successfully",
         "cycle_id": cycle.id,
         "feedback_requests": {
             "self_assessment": 1,
-            "supervisor_feedback": len(feedback_sources.get("supervisor_ids", [])),
-            "peer_feedback": len(feedback_sources.get("peer_ids", [])),
-            "subordinate_feedback": len(feedback_sources.get("subordinate_ids", []))
+            "supervisor_feedback": len(feedback_sources.get("supervisor_ids", []))
         }
     }
 
@@ -3094,7 +2952,7 @@ def _get_questions_for_review_type(cycle: ReviewCycle, review_type: str) -> list
     # Return default questions for the review type
     return default_questions.get(review_type, default_questions["self"])
 
-def _generate_comprehensive_cycle_analytics(cycle: ReviewCycle, reviews: List[Review], peer_reviews: List[PeerReview], db: Session) -> dict:
+def _generate_comprehensive_cycle_analytics(cycle: ReviewCycle, reviews: List[Review], peer_reviews: List, db: Session) -> dict:
     """Generate comprehensive analytics for a review cycle"""
     
     # Basic cycle overview
@@ -4103,23 +3961,18 @@ def _calculate_user_review_scores(cycle_id: str, user_id: str, db: Session):
 
         # Calculate scores for each review type
         self_score = _calculate_trait_score_by_type(cycle_id, user_id, trait_id, 'self', db)
-        peer_score = _calculate_trait_score_by_type(cycle_id, user_id, trait_id, 'peer', db)
+        peer_score = None
         supervisor_score = _calculate_trait_score_by_type(cycle_id, user_id, trait_id, 'supervisor', db)
 
-        # Calculate weighted score: self (20%) + peer (30%) + supervisor (50%)
+        # Calculate weighted score: self (28.6%) + supervisor (71.4%) — normalised from 0.2 + 0.5
         weighted_score = None
-        if self_score is not None or peer_score is not None or supervisor_score is not None:
-            # Only include scores that exist, adjust weights proportionally
+        if self_score is not None or supervisor_score is not None:
             total_weight = 0
             weighted_total = 0
 
             if self_score is not None:
                 weighted_total += self_score * 0.2
                 total_weight += 0.2
-
-            if peer_score is not None:
-                weighted_total += peer_score * 0.3
-                total_weight += 0.3
 
             if supervisor_score is not None:
                 weighted_total += supervisor_score * 0.5

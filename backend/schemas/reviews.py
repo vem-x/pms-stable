@@ -87,36 +87,6 @@ class ReviewResponse(ReviewBase):
     class Config:
         from_attributes = True
 
-# Peer Review Schemas
-class PeerReviewBase(BaseModel):
-    cycle_id: str
-    reviewee_id: str
-    reviewer_id: str
-
-class PeerReviewCreate(PeerReviewBase):
-    relationship_context: Optional[str] = Field(None, max_length=100)
-
-class PeerReviewUpdate(BaseModel):
-    responses: Optional[Dict[str, Any]] = None
-    completion_percentage: Optional[float] = Field(None, ge=0, le=100)
-    status: Optional[ReviewStatus] = None
-    relationship_context: Optional[str] = None
-
-class PeerReviewResponse(PeerReviewBase):
-    id: str
-    responses: Optional[Dict[str, Any]]
-    completion_percentage: float
-    time_spent: int
-    status: ReviewStatus
-    deadline: Optional[datetime]
-    relationship_context: Optional[str]
-    created_at: datetime
-    updated_at: datetime
-    submitted_at: Optional[datetime]
-
-    class Config:
-        from_attributes = True
-
 # Response Schemas for Complex Operations
 class ReviewCycleParticipants(BaseModel):
     cycle_id: str

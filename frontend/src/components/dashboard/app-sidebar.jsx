@@ -1,6 +1,8 @@
 'use client'
 
 import * as React from "react"
+import { useState, useEffect } from "react"
+import Image from "next/image"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import {
@@ -16,7 +18,9 @@ import {
   Calendar,
   FileText,
   Star,
-  TrendingUp
+  TrendingUp,
+  Moon,
+  Sun,
 } from "lucide-react"
 
 import {
@@ -146,7 +150,7 @@ function NavGroup({ title, items }) {
 
   return (
     <SidebarGroup>
-      <SidebarGroupLabel >{title}</SidebarGroupLabel>
+      <SidebarGroupLabel className="text-sidebar-foreground/40 text-[10px] uppercase tracking-widest font-semibold px-3">{title}</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
           {visibleItems.map((item) => {
@@ -162,7 +166,11 @@ function NavGroup({ title, items }) {
               <SidebarMenuItem key={item.title}>
                 <SidebarMenuButton
                   asChild
-                  className={isActive ? "bg-blue-800/20  font-bold hover:bg-gray-800/30" : "text-gray-500"}
+                  className={
+                    isActive
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium hover:bg-sidebar-accent"
+                      : "text-sidebar-foreground/55 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+                  }
                 >
                   <Link href={item.url}>
                     <item.icon className="h-4 w-4" />
@@ -181,6 +189,27 @@ function NavGroup({ title, items }) {
 export function AppSidebar() {
   const { user, logout } = useAuth()
   const router = useRouter()
+  const [isDark, setIsDark] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem('theme')
+    if (saved === 'dark') {
+      document.documentElement.classList.add('dark')
+      setIsDark(true)
+    }
+  }, [])
+
+  const toggleTheme = () => {
+    const next = !isDark
+    setIsDark(next)
+    if (next) {
+      document.documentElement.classList.add('dark')
+      localStorage.setItem('theme', 'dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+      localStorage.setItem('theme', 'light')
+    }
+  }
 
   const handleLogout = async () => {
     try {
@@ -199,12 +228,20 @@ export function AppSidebar() {
 
   return (
     <Sidebar variant="inset" collapsible="icon">
-      <SidebarHeader className="border-b px-6 py-4 group-data-[collapsible=icon]:px-2">
+      <SidebarHeader className="border-b border-sidebar-border px-5 py-4 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:py-3">
         <div className="flex items-center gap-3">
-          
+          <div className="h-7 w-7 rounded-md overflow-hidden flex-shrink-0">
+            <Image
+              src={isDark ? "/icon_dark.png" : "/icon_light.png"}
+              alt="Nigcomsat Logo"
+              width={28}
+              height={28}
+              className="w-full h-full object-contain"
+            />
+          </div>
           <div className="flex flex-col group-data-[collapsible=icon]:hidden">
-            <span className="text-sm font-semibold">Nigcomsat PMS</span>
-            <span className="text-xs text-muted-foreground">Performance Management</span>
+            <span className="text-sm font-semibold text-sidebar-foreground">Nigcomsat PMS</span>
+            <span className="text-xs text-sidebar-foreground/50">Performance Management</span>
           </div>
         </div>
       </SidebarHeader>
@@ -213,43 +250,58 @@ export function AppSidebar() {
         <NavGroup title="" items={navigationItems} />
 
         <PermissionGuard permission="user_view_all">
-          <Separator className="my-2" />
+          <Separator className="my-1 bg-sidebar-border" />
           <NavGroup title="Management" items={managementItems} />
         </PermissionGuard>
 
         <PermissionGuard permission="reports_generate">
-          <Separator className="my-2" />
+          <Separator className="my-1 bg-sidebar-border" />
           <NavGroup title="Reports" items={reportsItems} />
         </PermissionGuard>
 
-        <Separator className="my-2" />
+        <Separator className="my-1 bg-sidebar-border" />
         <NavGroup title="Settings" items={settingsItems} />
       </SidebarContent>
 
-      <SidebarFooter className="border-t p-4 group-data-[collapsible=icon]:p-2">
-        <div className="flex items-center gap-3 mb-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:mb-0">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="text-xs">
+      <SidebarFooter className="border-t border-sidebar-border px-4 py-3 group-data-[collapsible=icon]:px-2 space-y-3">
+        <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
+          <Avatar className="h-8 w-8 flex-shrink-0">
+            <AvatarFallback className="text-xs bg-sidebar-accent text-sidebar-accent-foreground font-medium">
               {userInitials}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
-            <p className="text-sm font-medium truncate">{user?.name}</p>
-            <p className="text-xs text-muted-foreground truncate">
-              {user?.role_name} • {user?.organization_name}
+            <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.name}</p>
+            <p className="text-xs text-sidebar-foreground/50 truncate">
+              {user?.role_name}
             </p>
           </div>
         </div>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleLogout}
-          className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground group-data-[collapsible=icon]:hidden"
-        >
-          <LogOut className="h-4 w-4" />
-          <span>Sign out</span>
-        </Button>
+        <div className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleTheme}
+            className="flex-1 justify-start gap-2 text-sidebar-foreground/55 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 group-data-[collapsible=icon]:w-full group-data-[collapsible=icon]:justify-center"
+            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            <span className="group-data-[collapsible=icon]:hidden text-xs">
+              {isDark ? "Light mode" : "Dark mode"}
+            </span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="flex-1 justify-start gap-2 text-sidebar-foreground/55 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 group-data-[collapsible=icon]:w-full group-data-[collapsible=icon]:justify-center"
+          >
+            <LogOut className="h-4 w-4" />
+            <span className="group-data-[collapsible=icon]:hidden text-xs">Sign out</span>
+          </Button>
+        </div>
       </SidebarFooter>
     </Sidebar>
   )

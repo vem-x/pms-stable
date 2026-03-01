@@ -95,7 +95,6 @@ class ReviewStatus(str, enum.Enum):
 
 class ReviewType(str, enum.Enum):
     SELF = "self"
-    PEER = "peer"
     SUPERVISOR = "supervisor"
     SUBORDINATE = "subordinate"
     MULTISOURCE = "360"
@@ -516,7 +515,6 @@ class ReviewCycle(Base):
     # Relationships
     creator = relationship("User")
     reviews = relationship("Review", back_populates="cycle", cascade="all, delete-orphan")
-    peer_reviews = relationship("PeerReview", back_populates="cycle", cascade="all, delete-orphan")
 
 class Review(Base):
     """
@@ -548,36 +546,6 @@ class Review(Base):
 
     # Relationships
     cycle = relationship("ReviewCycle", back_populates="reviews")
-    reviewee = relationship("User", foreign_keys=[reviewee_id])
-    reviewer = relationship("User", foreign_keys=[reviewer_id])
-
-class PeerReview(Base):
-    """
-    Peer review assignments for 360-degree feedback
-    Handles peer-to-peer evaluation workflows
-    """
-    __tablename__ = "peer_reviews"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    responses = Column(JSON)  # Peer feedback responses
-    completion_percentage = Column(Float, default=0.0)
-    time_spent = Column(Integer, default=0)
-
-    status = Column(Enum(ReviewStatus), default=ReviewStatus.NOT_STARTED)
-    deadline = Column(DateTime)
-    relationship_context = Column(String(100))  # colleague, collaborator, etc.
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    submitted_at = Column(DateTime(timezone=True))
-
-    # Foreign Keys
-    cycle_id = Column(UUID(as_uuid=True), ForeignKey("review_cycles.id"), nullable=False)
-    reviewee_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    reviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-
-    # Relationships
-    cycle = relationship("ReviewCycle", back_populates="peer_reviews")
     reviewee = relationship("User", foreign_keys=[reviewee_id])
     reviewer = relationship("User", foreign_keys=[reviewer_id])
 

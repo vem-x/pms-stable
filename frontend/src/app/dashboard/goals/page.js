@@ -75,12 +75,14 @@ import {
   useRequestGoalChange,
   useUsers,
   useOrganizations,
-  useGoalTags
+  useGoalTags,
+  useAssessGoal
 } from "@/lib/react-query"
 
 const statusColors = {
   PENDING_APPROVAL: "bg-yellow-100 text-yellow-800 border-yellow-200",
   ACTIVE: "bg-blue-100 text-blue-800 border-blue-200",
+  COMPLETED: "bg-sky-100 text-sky-800 border-sky-200",
   ACHIEVED: "bg-green-100 text-green-800 border-green-200",
   DISCARDED: "bg-gray-100 text-gray-800 border-gray-200",
   REJECTED: "bg-red-100 text-red-800 border-red-200",
@@ -244,11 +246,19 @@ function GoalCard({
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={(e) => {
                         e.stopPropagation();
-                        onStatusChange(goal, "ACHIEVED");
+                        onStatusChange(goal, "COMPLETED");
                       }}>
                         <CheckCircle className="mr-2 h-4 w-4" />
-                        Mark as Achieved
+                        Mark as Complete
                       </DropdownMenuItem>
+                      {goal.status === "COMPLETED" && goal.scope === "INDIVIDUAL" && goal.kpis?.length > 0 && (
+                        <DropdownMenuItem onClick={(e) => {
+                          e.stopPropagation();
+                          onStatusChange(goal, "ASSESS");
+                        }}>
+                          Assess KPIs
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onClick={(e) => {
                         e.stopPropagation();
                         onStatusChange(goal, "DISCARDED");
@@ -276,6 +286,9 @@ function GoalCard({
           <Badge className={`${statusColors[goal.status]} text-xs px-1.5 py-0`}>
             {formatStatus(goal.status)}
           </Badge>
+          {goal.achieved && (
+            <Badge className="bg-green-100 text-green-800 border-green-200 text-xs px-1.5 py-0">Achieved</Badge>
+          )}
           {goal.frozen && (
             <Badge className="bg-gray-200 text-gray-800 text-xs px-1.5 py-0">Frozen</Badge>
           )}
@@ -320,6 +333,30 @@ function GoalCard({
           </div>
         )}
         
+        {goal.kpis && goal.kpis.length > 0 && (
+          <div className="space-y-1.5 pt-1">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">KPIs</p>
+            <div className="space-y-1">
+              {goal.kpis.slice(0, 2).map((kpi, ki) => {
+                const desc = typeof kpi === 'string' ? kpi : kpi.description
+                const target = typeof kpi === 'object' && kpi.target_value != null
+                  ? `— ${kpi.target_value}${kpi.target_unit ? ' ' + kpi.target_unit : ''}`
+                  : ''
+                return (
+                  <p key={ki} className="text-xs text-gray-600 leading-snug">
+                    <span className="text-gray-300 mr-1">•</span>
+                    <span>{desc}</span>
+                    {target && <span className="text-gray-400 ml-1">{target}</span>}
+                  </p>
+                )
+              })}
+              {goal.kpis.length > 2 && (
+                <p className="text-xs text-gray-400">+{goal.kpis.length - 2} more KPIs</p>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="space-y-1.5 mt-auto pt-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-gray-600 font-medium">Progress</span>
@@ -459,7 +496,11 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
         description: goal.description || "",
         scope: goal.scope || availableTypes[0]?.value || (isDepartmentalOnly ? "DEPARTMENTAL" : "COMPANY_WIDE"),
         type: goal.type || "QUARTERLY",
-        kpis: Array.isArray(goal.kpis) ? goal.kpis : (goal.kpis ? [goal.kpis] : []),
+        kpis: Array.isArray(goal.kpis)
+          ? goal.kpis.map(k => typeof k === 'string'
+              ? { id: Date.now().toString(), description: k, target_value: null, target_unit: null }
+              : k)
+          : [],
         difficulty_level: goal.difficulty_level || 3,
         start_date: goal.start_date || "",
         end_date: goal.end_date || "",
@@ -508,6 +549,15 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
     if (formData.type === "YEARLY") {
       delete submitData.quarter
       delete submitData.year
+    }
+
+    if (Array.isArray(submitData.kpis)) {
+      submitData.kpis = submitData.kpis
+        .map(k => typeof k === 'string'
+          ? { id: Date.now().toString(), description: k, target_value: null, target_unit: null }
+          : { ...k, target_value: k.target_value != null ? parseFloat(k.target_value) : null }
+        )
+        .filter(k => k.description?.trim())
     }
 
     onSubmit(submitData)
@@ -634,7 +684,7 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setFormData({ ...formData, kpis: [...formData.kpis, ""] })}
+                  onClick={() => setFormData({ ...formData, kpis: [...formData.kpis, { id: Date.now().toString(), description: "", target_value: null, target_unit: null }] })}
                 >
                   <Plus className="h-4 w-4 mr-1" />
                   Add KPI
@@ -645,27 +695,71 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
                   <p className="text-sm text-gray-500 italic">No KPIs added yet. Click "Add KPI" to add one.</p>
                 )}
                 {formData.kpis.map((kpi, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <Input
-                      value={kpi}
-                      onChange={(e) => {
-                        const newKpis = [...formData.kpis]
-                        newKpis[index] = e.target.value
-                        setFormData({ ...formData, kpis: newKpis })
-                      }}
-                      placeholder={`KPI #${index + 1}`}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        const newKpis = formData.kpis.filter((_, i) => i !== index)
-                        setFormData({ ...formData, kpis: newKpis })
-                      }}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+                  <div key={typeof kpi === 'object' ? kpi.id : index} className="border border-gray-200 rounded-md p-3 space-y-2 bg-gray-50">
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 space-y-2">
+                        <Input
+                          value={typeof kpi === 'string' ? kpi : (kpi.description || '')}
+                          onChange={(e) => {
+                            const newKpis = [...formData.kpis]
+                            newKpis[index] = typeof kpi === 'string'
+                              ? { id: Date.now().toString(), description: e.target.value, target_value: null, target_unit: null }
+                              : { ...kpi, description: e.target.value }
+                            setFormData({ ...formData, kpis: newKpis })
+                          }}
+                          placeholder={`KPI #${index + 1} description`}
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <Input
+                            type="number"
+                            value={typeof kpi === 'string' ? '' : (kpi.target_value ?? '')}
+                            onChange={(e) => {
+                              const newKpis = [...formData.kpis]
+                              const base = typeof kpi === 'string' ? { id: Date.now().toString(), description: kpi, target_unit: null } : kpi
+                              newKpis[index] = { ...base, target_value: e.target.value ? parseFloat(e.target.value) : null }
+                              setFormData({ ...formData, kpis: newKpis })
+                            }}
+                            placeholder="Target value (e.g. 30)"
+                          />
+                          <Select
+                            value={typeof kpi === 'string' ? '' : (kpi.target_unit || '')}
+                            onValueChange={(val) => {
+                              const newKpis = [...formData.kpis]
+                              const base = typeof kpi === 'string' ? { id: Date.now().toString(), description: kpi, target_value: null } : kpi
+                              newKpis[index] = { ...base, target_unit: val || null }
+                              setFormData({ ...formData, kpis: newKpis })
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Unit" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">None</SelectItem>
+                              <SelectItem value="%">%</SelectItem>
+                              <SelectItem value="count">count</SelectItem>
+                              <SelectItem value="NGN">NGN</SelectItem>
+                              <SelectItem value="days">days</SelectItem>
+                              <SelectItem value="hours">hours</SelectItem>
+                              <SelectItem value="score">score</SelectItem>
+                              <SelectItem value="km">km</SelectItem>
+                              <SelectItem value="units">units</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="mt-0.5"
+                        onClick={() => {
+                          const newKpis = formData.kpis.filter((_, i) => i !== index)
+                          setFormData({ ...formData, kpis: newKpis })
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -870,7 +964,11 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
         title: goal.title || "",
         description: goal.description || "",
         type: goal.type || "QUARTERLY",
-        kpis: Array.isArray(goal.kpis) ? goal.kpis : (goal.kpis ? [goal.kpis] : []),
+        kpis: Array.isArray(goal.kpis)
+          ? goal.kpis.map(k => typeof k === 'string'
+              ? { id: Date.now().toString(), description: k, target_value: null, target_unit: null }
+              : k)
+          : [],
         difficulty_level: goal.difficulty_level || 3,
         start_date: goal.start_date || "",
         end_date: goal.end_date || "",
@@ -912,6 +1010,15 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
     if (formData.type === "YEARLY") {
       delete submitData.quarter
       delete submitData.year
+    }
+
+    if (Array.isArray(submitData.kpis)) {
+      submitData.kpis = submitData.kpis
+        .map(k => typeof k === 'string'
+          ? { id: Date.now().toString(), description: k, target_value: null, target_unit: null }
+          : { ...k, target_value: k.target_value != null ? parseFloat(k.target_value) : null }
+        )
+        .filter(k => k.description?.trim())
     }
 
     onSubmit(submitData)
@@ -1027,7 +1134,7 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setFormData({ ...formData, kpis: [...formData.kpis, ""] })}
+                  onClick={() => setFormData({ ...formData, kpis: [...formData.kpis, { id: Date.now().toString(), description: "", target_value: null, target_unit: null }] })}
                 >
                   <Plus className="h-4 w-4 mr-1" />
                   Add KPI
@@ -1038,27 +1145,71 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
                   <p className="text-sm text-gray-500 italic">No KPIs added yet. Click "Add KPI" to add one.</p>
                 )}
                 {formData.kpis.map((kpi, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <Input
-                      value={kpi}
-                      onChange={(e) => {
-                        const newKpis = [...formData.kpis]
-                        newKpis[index] = e.target.value
-                        setFormData({ ...formData, kpis: newKpis })
-                      }}
-                      placeholder={`KPI #${index + 1}`}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        const newKpis = formData.kpis.filter((_, i) => i !== index)
-                        setFormData({ ...formData, kpis: newKpis })
-                      }}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+                  <div key={typeof kpi === 'object' ? kpi.id : index} className="border border-gray-200 rounded-md p-3 space-y-2 bg-gray-50">
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 space-y-2">
+                        <Input
+                          value={typeof kpi === 'string' ? kpi : (kpi.description || '')}
+                          onChange={(e) => {
+                            const newKpis = [...formData.kpis]
+                            newKpis[index] = typeof kpi === 'string'
+                              ? { id: Date.now().toString(), description: e.target.value, target_value: null, target_unit: null }
+                              : { ...kpi, description: e.target.value }
+                            setFormData({ ...formData, kpis: newKpis })
+                          }}
+                          placeholder={`KPI #${index + 1} description`}
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <Input
+                            type="number"
+                            value={typeof kpi === 'string' ? '' : (kpi.target_value ?? '')}
+                            onChange={(e) => {
+                              const newKpis = [...formData.kpis]
+                              const base = typeof kpi === 'string' ? { id: Date.now().toString(), description: kpi, target_unit: null } : kpi
+                              newKpis[index] = { ...base, target_value: e.target.value ? parseFloat(e.target.value) : null }
+                              setFormData({ ...formData, kpis: newKpis })
+                            }}
+                            placeholder="Target value (e.g. 30)"
+                          />
+                          <Select
+                            value={typeof kpi === 'string' ? '' : (kpi.target_unit || '')}
+                            onValueChange={(val) => {
+                              const newKpis = [...formData.kpis]
+                              const base = typeof kpi === 'string' ? { id: Date.now().toString(), description: kpi, target_value: null } : kpi
+                              newKpis[index] = { ...base, target_unit: val || null }
+                              setFormData({ ...formData, kpis: newKpis })
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Unit" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">None</SelectItem>
+                              <SelectItem value="%">%</SelectItem>
+                              <SelectItem value="count">count</SelectItem>
+                              <SelectItem value="NGN">NGN</SelectItem>
+                              <SelectItem value="days">days</SelectItem>
+                              <SelectItem value="hours">hours</SelectItem>
+                              <SelectItem value="score">score</SelectItem>
+                              <SelectItem value="km">km</SelectItem>
+                              <SelectItem value="units">units</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="mt-0.5"
+                        onClick={() => {
+                          const newKpis = formData.kpis.filter((_, i) => i !== index)
+                          setFormData({ ...formData, kpis: newKpis })
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1231,14 +1382,28 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
   )
 }
 
-function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit }) {
+function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit, onAssess }) {
   const [formData, setFormData] = useState({
     new_percentage: goal?.progress_percentage || 0,
     report: "",
   })
 
+  useEffect(() => {
+    if (goal) {
+      setFormData({ new_percentage: goal.progress_percentage || 0, report: "" })
+    }
+  }, [goal?.id])
+
+  const hasKpis = (goal?.kpis?.length ?? 0) > 0
+  const is100 = formData.new_percentage === 100
+
   const handleSubmit = (e) => {
     e.preventDefault()
+    if (is100 && hasKpis) {
+      onClose()
+      if (onAssess) onAssess(goal)
+      return
+    }
     onSubmit(formData)
     onClose()
   }
@@ -1249,11 +1414,8 @@ function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit }) {
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Update Goal Progress</DialogTitle>
-            <DialogDescription>
-              Update progress for &quot;{goal?.title}&quot;
-            </DialogDescription>
+            <DialogDescription>Update progress for &quot;{goal?.title}&quot;</DialogDescription>
           </DialogHeader>
-
           <div className="grid gap-6 py-4">
             <div className="grid gap-3">
               <Label htmlFor="percentage">Progress Percentage</Label>
@@ -1270,25 +1432,125 @@ function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit }) {
                 <Progress value={formData.new_percentage} className="h-2" />
               </div>
             </div>
-
-            <div className="grid gap-3">
-              <Label htmlFor="report">Progress Report <span className="text-red-500">*</span></Label>
-              <Textarea
-                id="report"
-                value={formData.report}
-                onChange={(e) => setFormData({ ...formData, report: e.target.value })}
-                placeholder="Explain the progress made..."
-                rows={5}
-                required
-              />
-            </div>
+            {is100 && hasKpis ? (
+              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>This goal has KPIs. You must enter KPI actuals to mark it as 100% complete.</span>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                <Label htmlFor="report">Progress Report <span className="text-red-500">*</span></Label>
+                <Textarea
+                  id="report"
+                  value={formData.report}
+                  onChange={(e) => setFormData({ ...formData, report: e.target.value })}
+                  placeholder="Explain the progress made..."
+                  rows={5}
+                  required
+                />
+              </div>
+            )}
           </div>
-
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit">
+              {is100 && hasKpis ? "Continue to KPI Assessment" : "Update Progress"}
             </Button>
-            <Button type="submit">Update Progress</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function AssessGoalDialog({ goal, isOpen, onClose, onSubmit }) {
+  const [kpiActuals, setKpiActuals] = useState({})
+
+  useEffect(() => {
+    if (goal?.kpis) {
+      const init = {}
+      goal.kpis.forEach(k => {
+        init[k.id] = { actual_value: k.actual_value ?? '', achieved: k.achieved ?? false }
+      })
+      setKpiActuals(init)
+    }
+  }, [goal?.id])
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    const kpi_assessments = (goal?.kpis || []).map(k => ({
+      id: k.id,
+      actual_value: parseFloat(kpiActuals[k.id]?.actual_value) || 0,
+      achieved: kpiActuals[k.id]?.achieved ?? false,
+    }))
+    onSubmit({ kpi_assessments })
+    onClose()
+  }
+
+  const calcScore = (kpi) => {
+    const actual = parseFloat(kpiActuals[kpi.id]?.actual_value)
+    if (isNaN(actual) || !kpi.target_value) return null
+    return (Math.min(actual / kpi.target_value, 1) * 5).toFixed(2)
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Assess KPIs</DialogTitle>
+            <DialogDescription>
+              Enter actual values for &quot;{goal?.title}&quot;
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {(goal?.kpis || []).map((kpi) => (
+              <div key={kpi.id} className="border border-gray-200 rounded-md p-3 space-y-2 bg-gray-50">
+                <p className="text-sm font-medium">{kpi.description}</p>
+                {kpi.target_value != null && (
+                  <p className="text-xs text-gray-500">
+                    Target: {kpi.target_value}{kpi.target_unit ? ` ${kpi.target_unit}` : ''}
+                  </p>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Actual Value</Label>
+                    <Input
+                      type="number"
+                      value={kpiActuals[kpi.id]?.actual_value ?? ''}
+                      onChange={e => setKpiActuals(prev => ({
+                        ...prev,
+                        [kpi.id]: { ...prev[kpi.id], actual_value: e.target.value }
+                      }))}
+                      placeholder="Enter actual value"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Score /5</Label>
+                    <div className="h-9 flex items-center px-3 rounded-md border border-gray-200 bg-white text-sm font-semibold text-gray-800">
+                      {calcScore(kpi) ?? '—'}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id={`achieved-${kpi.id}`}
+                    checked={kpiActuals[kpi.id]?.achieved ?? false}
+                    onChange={e => setKpiActuals(prev => ({
+                      ...prev,
+                      [kpi.id]: { ...prev[kpi.id], achieved: e.target.checked }
+                    }))}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor={`achieved-${kpi.id}`} className="text-xs cursor-pointer">Mark KPI as achieved</Label>
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit">Submit Assessment</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -1564,14 +1826,40 @@ function GoalDetailDialog({ goal, isOpen, onClose, parentGoal, supervisor, super
             </div>
           )}
 
-          {goal.kpis && (Array.isArray(goal.kpis) ? goal.kpis.length > 0 : goal.kpis.trim()) && (
+          {goal.kpis && goal.kpis.length > 0 && (
             <div className="space-y-2">
               <h3 className="font-semibold text-sm text-gray-700">Key Performance Indicators</h3>
-              <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-                {(Array.isArray(goal.kpis) ? goal.kpis : goal.kpis.split('\n').filter(k => k.trim())).map((kpi, index) => (
-                  <li key={index} className="break-words">{typeof kpi === 'string' ? kpi.trim() : kpi}</li>
-                ))}
-              </ul>
+              <div className="border border-gray-200 rounded-md overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-gray-500 font-medium">KPI</th>
+                      <th className="px-3 py-2 text-center text-gray-500 font-medium w-24">Target</th>
+                      <th className="px-3 py-2 text-center text-gray-500 font-medium w-24">Actual</th>
+                      <th className="px-3 py-2 text-center text-gray-500 font-medium w-16">Score /5</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {goal.kpis.map((kpi, ki) => {
+                      const desc = typeof kpi === 'string' ? kpi : kpi.description
+                      const targetVal = typeof kpi === 'object' ? kpi.target_value : null
+                      const targetUnit = typeof kpi === 'object' ? kpi.target_unit : null
+                      const actualVal = typeof kpi === 'object' ? kpi.actual_value : null
+                      const score = targetVal && actualVal != null ? (Math.min(actualVal / targetVal, 1) * 5).toFixed(2) : null
+                      const fmtTarget = targetVal != null ? `${targetVal}${targetUnit ? ' ' + targetUnit : ''}` : '—'
+                      const fmtActual = actualVal != null ? `${actualVal}${targetUnit ? ' ' + targetUnit : ''}` : '—'
+                      return (
+                        <tr key={ki} className="border-t border-gray-100">
+                          <td className="px-3 py-2 text-gray-700">{desc}</td>
+                          <td className="px-3 py-2 text-center text-gray-500">{fmtTarget}</td>
+                          <td className="px-3 py-2 text-center text-gray-700 font-medium">{fmtActual}</td>
+                          <td className="px-3 py-2 text-center font-semibold text-gray-800">{score ?? '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -1713,12 +2001,14 @@ export default function GoalsPage() {
   const [isChangeRequestOpen, setIsChangeRequestOpen] = useState(false)
   const [isRespondOpen, setIsRespondOpen] = useState(false)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
+  const [isAssessOpen, setIsAssessOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState(null)
   const [updatingGoal, setUpdatingGoal] = useState(null)
   const [approvingGoal, setApprovingGoal] = useState(null)
   const [changingGoal, setChangingGoal] = useState(null)
   const [respondingGoal, setRespondingGoal] = useState(null)
   const [detailGoal, setDetailGoal] = useState(null)
+  const [assessingGoal, setAssessingGoal] = useState(null)
   const [activeTab, setActiveTab] = useState("organizational")
   const [searchTerm, setSearchTerm] = useState("")
   const [yearFilter, setYearFilter] = useState("all")
@@ -1775,6 +2065,7 @@ export default function GoalsPage() {
   const approvalMutation = useApproveGoal()
   const respondMutation = useRespondToGoal()
   const requestChangeMutation = useRequestGoalChange()
+  const assessMutation = useAssessGoal()
 
   // Get supervisees for supervisor view
   const supervisees = useMemo(() => {
@@ -1950,13 +2241,13 @@ const myIndividualGoals = useMemo(() => {
 
   const handleUpdateProgress = (data) => {
     if (updatingGoal) {
-      updateProgressMutation.mutate({ id: updatingGoal.id, ...data }, {
-        onSuccess: () => {
-          if (data.new_percentage === 100) {
-            updateStatusMutation.mutate({ id: updatingGoal.id, status: 'ACHIEVED' })
-          }
-        }
-      })
+      updateProgressMutation.mutate({ id: updatingGoal.id, ...data })
+    }
+  }
+
+  const handleAssess = (data) => {
+    if (assessingGoal) {
+      assessMutation.mutate({ id: assessingGoal.id, ...data })
     }
   }
 
@@ -2026,6 +2317,11 @@ const myIndividualGoals = useMemo(() => {
   }
 
   const handleStatusChange = (goal, status) => {
+    if (status === "ASSESS") {
+      setAssessingGoal(goal)
+      setIsAssessOpen(true)
+      return
+    }
     updateStatusMutation.mutate({ id: goal.id, status })
   }
 
@@ -2673,6 +2969,11 @@ const myIndividualGoals = useMemo(() => {
           setUpdatingGoal(null)
         }}
         onSubmit={handleUpdateProgress}
+        onAssess={(goal) => {
+          setUpdatingGoal(null)
+          setAssessingGoal(goal)
+          setIsAssessOpen(true)
+        }}
       />
 
       <GoalApprovalDialog
@@ -2718,6 +3019,13 @@ const myIndividualGoals = useMemo(() => {
         canApprove={canApproveGoals}
         onApprove={handleApprovalDialog}
         currentUserId={user?.user_id}
+      />
+
+      <AssessGoalDialog
+        goal={assessingGoal}
+        isOpen={isAssessOpen}
+        onClose={() => { setIsAssessOpen(false); setAssessingGoal(null) }}
+        onSubmit={handleAssess}
       />
     </div>
   )

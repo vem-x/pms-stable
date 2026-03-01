@@ -7,6 +7,12 @@ import { Toaster } from "sonner";
 export const metadata = {
   title: "Nigcomsat PMS - Performance Management System",
   description: "Comprehensive performance management system for Nigcomsat",
+  icons: {
+    icon: [
+      { url: "/favicon_light.png", media: "(prefers-color-scheme: light)" },
+      { url: "/favicon_dark.png", media: "(prefers-color-scheme: dark)" },
+    ],
+  },
 };
 
 export default function RootLayout({ children }) {

@@ -208,10 +208,29 @@ export function useUpdateUserStatus() {
 }
 
 // Organization hooks
-export function useOrganizations() {
+export function useOrganizations(params = {}) {
+  return useQuery({
+    queryKey: [...QUERY_KEYS.ORGANIZATIONS, params],
+    queryFn: () => organizations.list(params),
+    select: (data) => Array.isArray(data) ? data : (data?.organizations || []),
+  })
+}
+
+// Flat list pre-grouped by level — single fetch, client-side derived
+export function useOrganizationsByLevel() {
   return useQuery({
     queryKey: QUERY_KEYS.ORGANIZATIONS,
-    queryFn: organizations.list,
+    queryFn: () => organizations.list(),
+    select: (data) => {
+      const all = Array.isArray(data) ? data : (data?.organizations || [])
+      return {
+        all,
+        directorates: all.filter(o => o.level?.toUpperCase() === 'DIRECTORATE'),
+        departments:  all.filter(o => o.level?.toUpperCase() === 'DEPARTMENT'),
+        divisions:    all.filter(o => o.level?.toUpperCase() === 'DIVISION'),
+        units:        all.filter(o => o.level?.toUpperCase() === 'UNIT'),
+      }
+    },
   })
 }
 
@@ -352,7 +371,17 @@ export function useDeleteRole() {
 }
 
 // Goal hooks
+// Returns flat array of goals (backward compat)
 export function useGoals(params = {}) {
+  return useQuery({
+    queryKey: [...QUERY_KEYS.GOALS, params],
+    queryFn: () => goals.list(params),
+    select: (data) => data?.goals || [],
+  })
+}
+
+// Returns full paginated response: { goals, total, page, per_page, total_pages }
+export function useGoalsPaginated(params = {}) {
   return useQuery({
     queryKey: [...QUERY_KEYS.GOALS, params],
     queryFn: () => goals.list(params),
@@ -442,6 +471,19 @@ export function useDeleteGoal() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOALS })
       toast.success('Goal deleted successfully')
+    },
+  })
+}
+
+export function useAssessGoal() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, ...data }) => goals.assess(id, data),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOALS })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOAL(variables.id) })
+      toast.success('Goal assessment submitted')
     },
   })
 }

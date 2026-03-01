@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { Search, Filter, X, ArrowUpDown, Eye, BarChart3, CheckCircle2, XCircle, Clock } from "lucide-react"
+import { Search, Filter, X, ArrowUpDown, Eye, BarChart3, CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight } from "lucide-react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -52,18 +52,17 @@ export default function PerformanceManagementPage() {
   const [departmentFilter, setDepartmentFilter] = useState("all")
   const [sortBy, setSortBy] = useState("name")
   const [sortOrder, setSortOrder] = useState("asc")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
-  const { data: organizations = [] } = useOrganizations()
+  const { data: departments = [] } = useOrganizations({ level: 'DEPARTMENT' })
 
-  // Get department options from organizations
   const departmentOptions = [
     { value: "all", label: "All Departments" },
-    ...organizations
-      .filter(org => org.level === "department")
-      .map(org => ({
-        value: org.name,
-        label: org.name
-      }))
+    ...departments.map(org => ({
+      value: org.name,
+      label: org.name
+    }))
   ]
 
   const fetchCycles = async () => {
@@ -110,10 +109,10 @@ export default function PerformanceManagementPage() {
   }, [])
 
   useEffect(() => {
-    if (selectedCycleId || (!cyclesLoading && cycles.length > 0)) {
-      fetchPerformanceData()
-    }
-  }, [selectedCycleId, departmentFilter, cyclesLoading, cycles.length, fetchPerformanceData])
+    if (cyclesLoading) return
+    // Always fetch — even with no cycle selected the backend returns employees
+    fetchPerformanceData()
+  }, [selectedCycleId, departmentFilter, cyclesLoading, fetchPerformanceData])
 
   const handleSort = (field) => {
     if (sortBy === field) {
@@ -122,9 +121,10 @@ export default function PerformanceManagementPage() {
       setSortBy(field)
       setSortOrder("asc")
     }
+    setCurrentPage(1)
   }
 
-  const filteredAndSortedEmployees = employees
+  const filteredAndSortedEmployees = useMemo(() => employees
     .filter(employee => {
       const matchesSearch = !searchTerm ||
         employee.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -162,11 +162,18 @@ export default function PerformanceManagementPage() {
       } else {
         return aVal < bVal ? 1 : -1
       }
-    })
+    }), [employees, searchTerm, sortBy, sortOrder])
+
+  const totalPages = Math.ceil(filteredAndSortedEmployees.length / pageSize)
+  const paginatedEmployees = filteredAndSortedEmployees.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  )
 
   const clearFilters = () => {
     setSearchTerm("")
     setDepartmentFilter("all")
+    setCurrentPage(1)
   }
 
   const getScoreColor = (score, outOf = 5) => {
@@ -235,14 +242,14 @@ export default function PerformanceManagementPage() {
                 <Input
                   placeholder="Search employees..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1) }}
                   className="pl-9"
                 />
               </div>
 
               <SearchableSelect
                 value={departmentFilter}
-                onValueChange={setDepartmentFilter}
+                onValueChange={(v) => { setDepartmentFilter(v); setCurrentPage(1) }}
                 options={departmentOptions}
                 placeholder="All Departments"
                 searchPlaceholder="Search departments..."
@@ -268,11 +275,12 @@ export default function PerformanceManagementPage() {
         <CardHeader>
           <CardTitle>Employee Performance Overview</CardTitle>
           <CardDescription>
-            Showing {filteredAndSortedEmployees.length} of {employees.length} employees
+            Showing {paginatedEmployees.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredAndSortedEmployees.length)} of {filteredAndSortedEmployees.length} employees
           </CardDescription>
         </CardHeader>
         <CardContent>
           {filteredAndSortedEmployees.length > 0 ? (
+            <div className="space-y-4">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -301,7 +309,7 @@ export default function PerformanceManagementPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredAndSortedEmployees.map((employee) => {
+                {paginatedEmployees.map((employee) => {
                   // Convert task score from 10-scale to 5-scale for display
                   const taskRating = employee.avg_task_score ? (employee.avg_task_score / 2) : null
 
@@ -359,6 +367,46 @@ export default function PerformanceManagementPage() {
                 })}
               </TableBody>
             </Table>
+            {/* Pagination Controls */}
+            <div className="flex items-center justify-between px-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>Rows per page:</span>
+                <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1) }}>
+                  <SelectTrigger className="h-8 w-[70px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[10, 25, 50].map(n => (
+                      <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">
+                  Page {currentPage} of {totalPages || 1}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            </div>
           ) : (
             <div className="text-center py-12">
               <BarChart3 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />

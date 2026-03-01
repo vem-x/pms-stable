@@ -8,7 +8,8 @@ import { Button } from "../../../components/ui/button"
 import { Input } from "../../../components/ui/input"
 import { Label } from "../../../components/ui/label"
 import { Alert, AlertDescription } from "../../../components/ui/alert"
-import { Loader2, Building2, Eye, EyeOff } from "lucide-react"
+import Image from "next/image"
+import { Loader2, Eye, EyeOff } from "lucide-react"
 import { useAuth } from "../../../lib/auth-context"
 
 export default function LoginPage() {
@@ -59,9 +60,13 @@ export default function LoginPage() {
         {/* Logo and Branding */}
         <div className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Building2 className="h-6 w-6" />
-            </div>
+            <Image
+              src="/icon_light.png"
+              alt="Nigcomsat Logo"
+              width={64}
+              height={64}
+              className="object-contain"
+            />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">
             Nigcomsat PMS

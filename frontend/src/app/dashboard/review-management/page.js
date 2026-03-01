@@ -44,10 +44,18 @@ import { toast } from "sonner"
 
 const statusColors = {
   draft: "bg-gray-100 text-gray-800",
-  scheduled: "bg-purple-100 text-purple-800",
-  active: "bg-blue-100 text-blue-800",
-  completed: "bg-green-100 text-green-800",
-  cancelled: "bg-red-100 text-red-800"
+  active: "bg-green-100 text-green-800",
+  completed: "bg-blue-100 text-blue-800",
+  cancelled: "bg-red-100 text-red-800",
+}
+
+const getStatusLabel = (status) => {
+  const s = status?.toLowerCase()
+  if (s === 'active' || s === 'scheduled') return 'Launched'
+  if (s === 'draft') return 'Draft'
+  if (s === 'completed') return 'Completed'
+  if (s === 'cancelled') return 'Cancelled'
+  return status || ''
 }
 
 const reviewStatusColors = {
@@ -59,7 +67,6 @@ const reviewStatusColors = {
 
 const reviewTypeColors = {
   self: "bg-blue-100 text-blue-800",
-  peer: "bg-purple-100 text-purple-800",
   supervisor: "bg-orange-100 text-orange-800"
 }
 
@@ -153,7 +160,6 @@ function TraitManagement() {
       
       const groupedQuestions = {
         self: data.filter(q => q.applies_to_self),
-        peer: data.filter(q => q.applies_to_peer),
         supervisor: data.filter(q => q.applies_to_supervisor)
       }
       setQuestions(groupedQuestions)
@@ -367,9 +373,7 @@ function EnhancedReviewCycleForm({ isOpen, onClose, onSubmit }) {
     type: "quarterly",
     period: "",
     start_date: "",
-    end_date: "",
-    peer_review_count: 5,
-    auto_assign_peers: true
+    end_date: ""
   })
 
   const [traits, setTraits] = useState([])
@@ -407,9 +411,7 @@ function EnhancedReviewCycleForm({ isOpen, onClose, onSubmit }) {
       type: "quarterly",
       period: "",
       start_date: "",
-      end_date: "",
-      peer_review_count: 5,
-      auto_assign_peers: true
+      end_date: ""
     })
   }
 
@@ -762,7 +764,6 @@ function QuestionDialog({ open, onClose, onSubmit, trait, initialReviewType = nu
   const [formData, setFormData] = useState({
     question_text: "",
     applies_to_self: false,
-    applies_to_peer: false,
     applies_to_supervisor: false
   })
 
@@ -772,15 +773,12 @@ function QuestionDialog({ open, onClose, onSubmit, trait, initialReviewType = nu
       setFormData({
         question_text: "",
         applies_to_self: initialReviewType === 'self',
-        applies_to_peer: initialReviewType === 'peer',
         applies_to_supervisor: initialReviewType === 'supervisor'
       })
     } else if (open && !initialReviewType) {
-      // Reset if no specific type
       setFormData({
         question_text: "",
         applies_to_self: false,
-        applies_to_peer: false,
         applies_to_supervisor: false
       })
     }
@@ -789,8 +787,7 @@ function QuestionDialog({ open, onClose, onSubmit, trait, initialReviewType = nu
   const handleSubmit = (e) => {
     e.preventDefault()
 
-    // Validate that at least one review type is selected
-    if (!formData.applies_to_self && !formData.applies_to_peer && !formData.applies_to_supervisor) {
+    if (!formData.applies_to_self && !formData.applies_to_supervisor) {
       toast.error('Please select at least one review type')
       return
     }
@@ -799,7 +796,6 @@ function QuestionDialog({ open, onClose, onSubmit, trait, initialReviewType = nu
     setFormData({
       question_text: "",
       applies_to_self: false,
-      applies_to_peer: false,
       applies_to_supervisor: false
     })
   }
@@ -832,7 +828,6 @@ function QuestionDialog({ open, onClose, onSubmit, trait, initialReviewType = nu
               <div className="space-y-3">
                 {[
                   { key: 'applies_to_self', label: 'Self Review', color: 'bg-blue-100 text-blue-800', description: 'Employee evaluates themselves' },
-                  { key: 'applies_to_peer', label: 'Peer Review', color: 'bg-purple-100 text-purple-800', description: 'Colleagues evaluate each other' },
                   { key: 'applies_to_supervisor', label: 'Supervisor Review', color: 'bg-orange-100 text-orange-800', description: 'Manager evaluates employee' }
                 ].map(({ key, label, color, description }) => (
                   <div key={key} className="flex items-start space-x-3 p-3 rounded-lg border">
@@ -876,7 +871,6 @@ function QuestionsManagementDialog({
   const [editingQuestion, setEditingQuestion] = useState(null)
   const reviewTypes = [
     { key: "self", label: "Self Review", color: "bg-blue-100 text-blue-800" },
-    { key: "peer", label: "Peer Review", color: "bg-purple-100 text-purple-800" },
     { key: "supervisor", label: "Supervisor Review", color: "bg-orange-100 text-orange-800" },
   ]
 
@@ -896,25 +890,27 @@ function QuestionsManagementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] p-6">
-        <DialogHeader className="mb-6">
+      <DialogContent className="max-w-5xl flex flex-col gap-0 p-0 h-[90vh]">
+        {/* Fixed header */}
+        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b">
           <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <DialogTitle className="text-2xl">Manage {trait?.name} Questions</DialogTitle>
-              <DialogDescription className="mt-2">
-                Add, edit, or remove questions for this trait. Each question is rated on a scale of 1-10.
+            <div className="flex-1 min-w-0">
+              <DialogTitle className="text-xl">Manage {trait?.name} Questions</DialogTitle>
+              <DialogDescription className="mt-1">
+                Add, edit, or remove questions. Each question is rated on a 1–10 scale.
               </DialogDescription>
             </div>
-            <Button onClick={onAddQuestion} size="sm" className="mt-1 flex-shrink-0">
+            <Button onClick={onAddQuestion} size="sm" className="flex-shrink-0">
               <Plus className="w-4 h-4 mr-2" />
               Add Question
             </Button>
           </div>
         </DialogHeader>
 
-        <div className="overflow-y-auto pr-4">
-          <Tabs defaultValue="self" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3">
+        {/* Scrollable content */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+          <Tabs defaultValue="self" className="space-y-4">
+            <TabsList className="grid w-full grid-cols-2">
               {reviewTypes.map((type) => (
                 <TabsTrigger key={type.key} value={type.key} className="flex items-center gap-2">
                   <Badge className={`${type.color} text-xs`}>
@@ -926,27 +922,27 @@ function QuestionsManagementDialog({
             </TabsList>
 
             {reviewTypes.map((type) => (
-              <TabsContent key={type.key} value={type.key} className="space-y-4 mt-4">
-                <div className="flex items-center justify-between mb-6">
-                  <h4 className="font-medium text-lg">Questions for {type.label}</h4>
+              <TabsContent key={type.key} value={type.key} className="space-y-4 mt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium">Questions for {type.label}</h4>
                   <Button onClick={() => onAddQuestionWithType(type.key)} size="sm" variant="outline">
                     <Plus className="w-3 h-3 mr-1" />
                     Add {type.label} Question
                   </Button>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {questions && questions[type.key] && questions[type.key].length > 0 ? (
                     questions[type.key].map((question, index) => (
                       <Card key={question.id} className="hover:shadow-md transition-shadow">
-                        <CardContent className="pt-6 pb-6">
+                        <CardContent className="py-4 px-5">
                           <div className="flex items-start justify-between gap-4">
                             <p className="text-sm font-medium flex-1 leading-relaxed">
-                              <span className="text-gray-500 mr-3 font-semibold">{index + 1}.</span>
+                              <span className="text-muted-foreground mr-2 font-semibold">{index + 1}.</span>
                               {question.question_text}
                             </p>
-                            <div className="flex items-center gap-2 ml-2 flex-shrink-0">
-                              <Badge className={`${type.color} text-xs whitespace-nowrap`}>1-10 Scale</Badge>
+                            <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                              <Badge className={`${type.color} text-xs whitespace-nowrap`}>1-10</Badge>
                               <Button size="sm" variant="ghost" onClick={() => setEditingQuestion(question)}>
                                 <Edit className="w-4 h-4" />
                               </Button>
@@ -967,15 +963,15 @@ function QuestionsManagementDialog({
                       </Card>
                     ))
                   ) : (
-                    <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-lg">
-                      <FileText className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                      <h4 className="text-lg font-medium text-gray-900 mb-2">No {type.label} Questions</h4>
-                      <p className="text-gray-500 mb-6">
-                        No questions have been added for {type.label.toLowerCase()} yet.
+                    <div className="text-center py-10 border-2 border-dashed border-gray-200 rounded-lg">
+                      <FileText className="w-10 h-10 mx-auto text-gray-400 mb-3" />
+                      <h4 className="font-medium text-gray-900 mb-1">No {type.label} Questions</h4>
+                      <p className="text-sm text-gray-500 mb-4">
+                        No questions added for {type.label.toLowerCase()} yet.
                       </p>
                       <Button onClick={() => onAddQuestionWithType(type.key)} size="sm">
                         <Plus className="w-4 h-4 mr-2" />
-                        Add First {type.label} Question
+                        Add First Question
                       </Button>
                     </div>
                   )}
@@ -989,7 +985,7 @@ function QuestionsManagementDialog({
               <FileText className="w-12 h-12 mx-auto text-gray-400 mb-4" />
               <h4 className="text-lg font-medium text-gray-900 mb-2">No Questions Added</h4>
               <p className="text-gray-500 mb-6">
-                This trait doesn&apos;t have any questions yet. Add questions to use this trait in review cycles.
+                This trait doesn&apos;t have any questions yet.
               </p>
               <Button onClick={onAddQuestion}>
                 <Plus className="w-4 h-4 mr-2" />
@@ -999,7 +995,8 @@ function QuestionsManagementDialog({
           )}
         </div>
 
-        <DialogFooter className="mt-8">
+        {/* Fixed footer */}
+        <DialogFooter className="flex-shrink-0 px-6 py-4 border-t">
           <Button onClick={onClose}>Done</Button>
         </DialogFooter>
       </DialogContent>
@@ -1049,6 +1046,16 @@ export default function ReviewManagementPage() {
     router.push(`/dashboard/review-management/${cycle.id}`)
   }
 
+  const handleLaunchCycle = async (cycleId) => {
+    if (!confirm('Launch this review cycle? This will generate review assignments for all active employees.')) return
+    try {
+      await POST(`/api/reviews/cycles/${cycleId}/activate`, {})
+      fetchCycles()
+    } catch (error) {
+      console.error('Error launching cycle:', error)
+    }
+  }
+
   const handleBackToOverview = () => {
     setCurrentView('overview')
     setSelectedCycle(null)
@@ -1089,8 +1096,8 @@ export default function ReviewManagementPage() {
                             <h3 className="font-semibold">{cycle.name}</h3>
                             <p className="text-sm text-gray-600">{cycle.period} • {cycle.type}</p>
                             <div className="flex items-center gap-4 mt-2">
-                              <Badge className={statusColors[cycle.status]}>
-                                {cycle.status}
+                              <Badge className={getStatusColor(cycle.status)}>
+                                {getStatusLabel(cycle.status)}
                               </Badge>
                               <span className="text-sm text-gray-500">
                                 {cycle.participants_count || 0} participants
@@ -1109,10 +1116,14 @@ export default function ReviewManagementPage() {
                               <Eye className="w-4 h-4 mr-1" />
                               View Details
                             </Button>
-                            <Button size="sm" variant="outline">
-                              <BarChart3 className="w-4 h-4 mr-1" />
-                              Analytics
-                            </Button>
+                            {cycle.status?.toUpperCase() === 'DRAFT' && (
+                              <Button
+                                size="sm"
+                                onClick={() => handleLaunchCycle(cycle.id)}
+                              >
+                                Launch
+                              </Button>
+                            )}
                           </div>
                         </div>
                       </CardContent>

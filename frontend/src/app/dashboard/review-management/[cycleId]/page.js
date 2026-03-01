@@ -74,12 +74,11 @@ export default function ReviewCycleDetailPage() {
           const traitQuestions = await GET(`/api/reviews/traits/${trait.id}/questions`)
           questionsData[trait.id] = {
             self: traitQuestions.filter(q => q.applies_to_self),
-            peer: traitQuestions.filter(q => q.applies_to_peer),
             supervisor: traitQuestions.filter(q => q.applies_to_supervisor)
           }
         } catch (error) {
           console.error(`Error fetching questions for trait ${trait.id}:`, error)
-          questionsData[trait.id] = { self: [], peer: [], supervisor: [] }
+          questionsData[trait.id] = { self: [], supervisor: [] }
         }
       }
       setQuestions(questionsData)
@@ -175,12 +174,21 @@ export default function ReviewCycleDetailPage() {
     const normalizedStatus = status?.toLowerCase()
     switch (normalizedStatus) {
       case 'draft': return 'bg-gray-100 text-gray-800'
-      case 'scheduled': return 'bg-purple-100 text-purple-800'
-      case 'active': return 'bg-blue-100 text-blue-800'
-      case 'completed': return 'bg-green-100 text-green-800'
+      case 'active':
+      case 'scheduled': return 'bg-green-100 text-green-800'
+      case 'completed': return 'bg-blue-100 text-blue-800'
       case 'cancelled': return 'bg-red-100 text-red-800'
       default: return 'bg-gray-100 text-gray-800'
     }
+  }
+
+  const getStatusLabel = (status) => {
+    const s = status?.toLowerCase()
+    if (s === 'active' || s === 'scheduled') return 'Launched'
+    if (s === 'draft') return 'Draft'
+    if (s === 'completed') return 'Completed'
+    if (s === 'cancelled') return 'Cancelled'
+    return status || ''
   }
 
   if (loading) {
@@ -223,7 +231,7 @@ export default function ReviewCycleDetailPage() {
             <h1 className="text-2xl font-bold">{cycle.name}</h1>
             <div className="flex items-center gap-4 mt-1">
               <Badge className={getStatusColor(cycle.status)}>
-                {cycle.status}
+                {getStatusLabel(cycle.status)}
               </Badge>
               <span className="text-sm text-gray-500">
                 {cycle.type} • {cycle.period}
@@ -273,7 +281,7 @@ export default function ReviewCycleDetailPage() {
             </div>
             <div>
               <p className="text-sm text-gray-500">Review Types</p>
-              <p className="text-sm font-medium mt-1">Self, Peer, Supervisor</p>
+              <p className="text-sm font-medium mt-1">Self, Supervisor</p>
             </div>
           </div>
         </CardContent>
@@ -308,10 +316,9 @@ export default function ReviewCycleDetailPage() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="self" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-2">
               {[
                 { key: 'self', label: 'Self Review' },
-                { key: 'peer', label: 'Peer Review' },
                 { key: 'supervisor', label: 'Supervisor Review' }
               ].map(type => {
                 const totalQuestions = Object.values(questions).reduce((total, traitQuestions) =>
@@ -328,7 +335,6 @@ export default function ReviewCycleDetailPage() {
 
             {[
               { key: 'self', label: 'Self Review' },
-              { key: 'peer', label: 'Peer Review' },
               { key: 'supervisor', label: 'Supervisor Review' }
             ].map(reviewType => (
               <TabsContent key={reviewType.key} value={reviewType.key} className="space-y-6">
@@ -612,7 +618,6 @@ function QuestionDialog({ open, onClose, onSubmit, trait, reviewType, traits }) 
 
   const reviewTypeLabels = {
     self: 'Self Review',
-    peer: 'Peer Review',
     supervisor: 'Supervisor Review'
   }
 
@@ -623,7 +628,6 @@ function QuestionDialog({ open, onClose, onSubmit, trait, reviewType, traits }) 
     const questionData = {
       question_text: formData.question_text,
       applies_to_self: reviewType === 'self',
-      applies_to_peer: reviewType === 'peer',
       applies_to_supervisor: reviewType === 'supervisor',
       trait_id: formData.trait_id
     }

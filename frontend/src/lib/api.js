@@ -888,8 +888,7 @@ export const goals = {
    * @returns {Promise<Array>} List of goals
    */
   async list(params = {}) {
-    const response = await GET('/api/goals', params)
-    return response.goals || []
+    return GET('/api/goals', params)
   },
 
   /**
@@ -1073,6 +1072,16 @@ export const goals = {
    */
   async unfreezeGoal(id, reason = null) {
     return POST(`/api/goals/${id}/unfreeze`, { reason })
+  },
+
+  /**
+   * Submit KPI actuals for a goal (supervisor assessment)
+   * @param {string} id - Goal ID
+   * @param {Object} assessment - { kpi_assessments: [{id, actual_value, achieved}] }
+   * @returns {Promise<Object>} Updated goal data
+   */
+  async assess(id, assessment) {
+    return PUT(`/api/goals/${id}/assess`, assessment)
   }
 }
 
@@ -1434,8 +1443,8 @@ export const organizations = {
    * List all organizations accessible to current user
    * @returns {Promise<Array>} List of organizations
    */
-  async list() {
-    return GET('/api/organization')
+  async list(params = {}) {
+    return GET('/api/organization', params)
   },
 
   /**

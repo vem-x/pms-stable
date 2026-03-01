@@ -13,7 +13,7 @@ export default function DashboardLayout({ children }) {
           <AppSidebar />
           <div className="flex-1 flex flex-col">
             <DashboardHeader />
-            <main className="flex-1 p-6 bg-white border-[2px] border-gray-400/10">
+            <main className="flex-1 p-6 bg-background border-[2px] border-border/60">
               {children}
             </main>
           </div>
