@@ -177,9 +177,72 @@ function OrganizationForm({ organization, isOpen, onClose, onSubmit }) {
   )
 }
 
-function OrganizationCard({ organization, onEdit, onDelete, getParentName }) {
+function OrgDetailDialog({ organization, getParentName, onClose }) {
+  if (!organization) return null
   return (
-    <Card>
+    <Dialog open={!!organization} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-muted-foreground" />
+            {organization.name}
+          </DialogTitle>
+          <DialogDescription>
+            <Badge className={levelColors[organization.level]}>
+              {levelLabels[organization.level]}
+            </Badge>
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="grid gap-1">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Organization ID</p>
+            <p className="font-mono text-sm bg-muted rounded px-3 py-1.5 select-all break-all">{organization.id}</p>
+          </div>
+
+          <div className="grid gap-1">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Name</p>
+            <p className="text-sm font-medium">{organization.name}</p>
+          </div>
+
+          {organization.description && (
+            <div className="grid gap-1">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Description</p>
+              <p className="text-sm text-muted-foreground">{organization.description}</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-1">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Users</p>
+              <p className="text-sm font-semibold flex items-center gap-1">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                {organization.user_count ?? 0}
+              </p>
+            </div>
+            {organization.parent_id && (
+              <div className="grid gap-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Parent</p>
+                <p className="text-sm">{getParentName(organization.parent_id)}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function OrganizationCard({ organization, onEdit, onDelete, onView, getParentName }) {
+  return (
+    <Card
+      className="cursor-pointer hover:shadow-md transition-shadow"
+      onClick={() => onView(organization)}
+    >
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -192,17 +255,17 @@ function OrganizationCard({ organization, onEdit, onDelete, getParentName }) {
             </Badge>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}>
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onEdit(organization)}>
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(organization) }}>
                   <Edit className="mr-2 h-4 w-4" />
                   Edit
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => onDelete(organization)}
+                  onClick={(e) => { e.stopPropagation(); onDelete(organization) }}
                   className="text-red-600"
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
@@ -220,7 +283,7 @@ function OrganizationCard({ organization, onEdit, onDelete, getParentName }) {
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-1">
             <Users className="h-4 w-4" />
-            <span>0 users</span>
+            <span>{organization.user_count ?? 0} users</span>
           </div>
           {organization.parent_id && (
             <div>
@@ -236,6 +299,7 @@ function OrganizationCard({ organization, onEdit, onDelete, getParentName }) {
 export default function OrganizationPage() {
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingOrganization, setEditingOrganization] = useState(null)
+  const [viewingOrganization, setViewingOrganization] = useState(null)
   const [filter, setFilter] = useState('all')
 
   const { data: organizations = [], isLoading } = useOrganizations()
@@ -366,6 +430,7 @@ export default function OrganizationPage() {
                         organization={organization}
                         onEdit={handleEdit}
                         onDelete={handleDelete}
+                        onView={setViewingOrganization}
                         getParentName={getParentName}
                       />
                     ))}
@@ -391,6 +456,13 @@ export default function OrganizationPage() {
             )}
           </div>
         )}
+
+        {/* Detail Dialog */}
+        <OrgDetailDialog
+          organization={viewingOrganization}
+          getParentName={getParentName}
+          onClose={() => setViewingOrganization(null)}
+        />
 
         {/* Form Dialog */}
         <OrganizationForm

@@ -95,15 +95,15 @@ export function AuthProvider({ children }) {
       // The API client automatically sets the token in cookies
       // Store user data from login response
       if (response.user) {
-        // Store additional data from our backend
-        const userData = {
-          ...response.user,
+        // Store token data from login response, then fetch full profile from /me
+        // (login response doesn't include all fields like supervisor_name)
+        const tokenData = {
           permissions: response.permissions || [],
           scope: response.scope || 'none'
         }
-        setUser(userData)
-        // Store user data in localStorage for auth.me() fallback
-        localStorage.setItem('user_data', JSON.stringify(userData))
+        localStorage.setItem('user_data', JSON.stringify({ ...response.user, ...tokenData }))
+        // Always fetch full profile so supervisor_name and other fields are included
+        await fetchUser()
       } else {
         // If user data is not in login response, fetch it
         await fetchUser()

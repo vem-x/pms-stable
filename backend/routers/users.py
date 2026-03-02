@@ -295,8 +295,16 @@ async def get_my_profile(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    _exclude = {'_sa_instance_state', 'organization', 'role', 'supervisor',
+                'goals', 'owned_goals', 'supervisees', 'task_assignments',
+                'created_tasks', 'progress_reports', 'created_tags'}
+    user_dict = {k: v for k, v in user.__dict__.items() if k not in _exclude}
+    if user.supervisor_id:
+        supervisor = db.query(User).filter(User.id == user.supervisor_id).first()
+        if supervisor:
+            user_dict['supervisor_name'] = f"{supervisor.first_name} {supervisor.last_name}"
     return UserWithRelations(
-        **user.__dict__,
+        **user_dict,
         organization={
             "id": str(user.organization.id),
             "name": user.organization.name,
@@ -485,8 +493,16 @@ async def get_user(
     supervisees = db.query(User).filter(User.supervisor_id == user.id).all()
     supervisees_list = [UserSchema(**enhance_user_with_supervisor(supervisee, db)) for supervisee in supervisees]
 
+    _exclude = {'_sa_instance_state', 'organization', 'role', 'supervisor',
+                'goals', 'owned_goals', 'supervisees', 'task_assignments',
+                'created_tasks', 'progress_reports', 'created_tags'}
+    user_dict = {k: v for k, v in user.__dict__.items() if k not in _exclude}
+    if user.supervisor_id:
+        supervisor = db.query(User).filter(User.id == user.supervisor_id).first()
+        if supervisor:
+            user_dict['supervisor_name'] = f"{supervisor.first_name} {supervisor.last_name}"
     return UserWithRelations(
-        **user.__dict__,
+        **user_dict,
         organization={
             "id": str(user.organization.id),
             "name": user.organization.name,

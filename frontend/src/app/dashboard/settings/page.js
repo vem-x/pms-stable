@@ -350,6 +350,13 @@ export default function SettingsPage() {
                 <Label className="text-muted-foreground">Level</Label>
                 <p className="font-medium">{user?.level || 'Not set'}</p>
               </div>
+
+              {user?.supervisor_name && (
+                <div>
+                  <Label className="text-muted-foreground">Supervisor</Label>
+                  <p className="font-medium">{user.supervisor_name}</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

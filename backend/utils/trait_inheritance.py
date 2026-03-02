@@ -74,6 +74,14 @@ class TraitInheritanceService:
             )
         ).order_by(ReviewTrait.display_order).all()
 
+        # Filter by grade level: if applicable_levels is set, user.level must be in that list
+        user_level = user.level
+        if user_level is not None:
+            applicable_traits = [
+                t for t in applicable_traits
+                if t.applicable_levels is None or user_level in t.applicable_levels
+            ]
+
         return applicable_traits
 
     def get_applicable_traits_for_organization(self, organization_id: uuid.UUID) -> List[ReviewTrait]:
@@ -162,4 +170,11 @@ class TraitInheritanceService:
 
         # Check if user's organization is within trait's scope
         hierarchy = self.get_organizational_hierarchy(user.organization_id)
-        return trait.organization_id in hierarchy
+        if trait.organization_id not in hierarchy:
+            return False
+
+        # Check grade level restriction
+        if trait.applicable_levels is not None and user.level not in trait.applicable_levels:
+            return False
+
+        return True

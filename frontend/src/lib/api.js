@@ -503,6 +503,24 @@ export const users = {
   },
 
   /**
+   * Get current user's supervisees
+   * @returns {Promise<Array>} List of supervisees
+   */
+  async getMySupervisees() {
+    return GET('/api/users/me/supervisees')
+  },
+
+  /**
+   * Assign or remove a supervisor for a user
+   * @param {string} userId - User ID to update
+   * @param {string|null} supervisorId - New supervisor ID, or null to remove
+   * @returns {Promise<Object>} Updated user data
+   */
+  async assignSupervisor(userId, supervisorId) {
+    return PUT(`/api/users/${userId}/supervisor`, { supervisor_id: supervisorId })
+  },
+
+  /**
    * Get specific user by ID
    * @param {string} id - User ID
    * @returns {Promise<Object>} User data
@@ -1082,6 +1100,10 @@ export const goals = {
    */
   async assess(id, assessment) {
     return PUT(`/api/goals/${id}/assess`, assessment)
+  },
+
+  async supervisorScore(id, data) {
+    return PUT(`/api/goals/${id}/supervisor-score`, data)
   }
 }
 

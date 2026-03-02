@@ -153,6 +153,14 @@ export function useUsers(params = {}) {
   })
 }
 
+export function useMySupervisees(options = {}) {
+  return useQuery({
+    queryKey: ['users', 'supervisees', 'me'],
+    queryFn: users.getMySupervisees,
+    ...options,
+  })
+}
+
 export function useUser(id) {
   return useQuery({
     queryKey: QUERY_KEYS.USER(id),
@@ -488,6 +496,19 @@ export function useAssessGoal() {
   })
 }
 
+export function useSupervisorScore() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, ...data }) => goals.supervisorScore(id, data),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOALS })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.GOAL(variables.id) })
+      toast.success('Goal scored successfully')
+    },
+  })
+}
+
 export function useApproveGoal() {
   const queryClient = useQueryClient()
 
@@ -532,10 +553,11 @@ export function useGoalFreezeLogs() {
   })
 }
 
-export function useSuperviseeGoals() {
+export function useSuperviseeGoals(options = {}) {
   return useQuery({
     queryKey: ['goals', 'supervisees'],
     queryFn: goals.getSuperviseeGoals,
+    ...options,
   })
 }
 

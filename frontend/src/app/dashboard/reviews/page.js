@@ -86,7 +86,6 @@ function MyReviews() {
 
   // Assignments are already filtered by cycle_id from backend
   const selfReviews = assignments.filter(a => a.review_type === 'self')
-  const peerReviews = assignments.filter(a => a.review_type === 'peer')
   const supervisorReviews = assignments.filter(a => a.review_type === 'supervisor')
 
   const renderAssignments = (assignmentsList, emptyMessage, reviewType) => {
@@ -104,8 +103,8 @@ function MyReviews() {
     return (
       <div className="space-y-4">
         {assignmentsList.map((assignment) => {
-          // For peer and supervisor reviews, show the person's name as title
-          const cardTitle = (reviewType === 'peer' || reviewType === 'supervisor')
+          // For supervisor reviews, show the person's name as title
+          const cardTitle = reviewType === 'supervisor'
             ? assignment.reviewee_name
             : assignment.cycle_title
 
@@ -119,7 +118,7 @@ function MyReviews() {
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex-1">
                     <h4 className="font-medium text-lg">{cardTitle}</h4>
-                    {(reviewType === 'peer' || reviewType === 'supervisor') && (
+                    {reviewType === 'supervisor' && (
                       <p className="text-sm text-muted-foreground mt-1">
                         {assignment.cycle_title}
                       </p>
@@ -221,12 +220,9 @@ function MyReviews() {
       ) : (
         /* Tabs */
         <Tabs defaultValue="self" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 max-w-md">
+          <TabsList className="grid w-full grid-cols-2 max-w-md">
             <TabsTrigger value="self">
               Self ({selfReviews.length})
-            </TabsTrigger>
-            <TabsTrigger value="peer">
-              Peer ({peerReviews.length})
             </TabsTrigger>
             <TabsTrigger value="supervisor">
               Supervisee ({supervisorReviews.length})
@@ -235,10 +231,6 @@ function MyReviews() {
 
           <TabsContent value="self">
             {renderAssignments(selfReviews, "You don't have any self-review assignments for this cycle.", 'self')}
-          </TabsContent>
-
-          <TabsContent value="peer">
-            {renderAssignments(peerReviews, "You don't have any peer review assignments for this cycle.", 'peer')}
           </TabsContent>
 
           <TabsContent value="supervisor">

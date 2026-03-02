@@ -284,6 +284,12 @@ class Goal(Base):
     achieved = Column(Boolean, default=False)  # Set by supervisor assess; True if avg KPI ratio >= 80%
     achieved_at = Column(DateTime(timezone=True))
     discarded_at = Column(DateTime(timezone=True))
+
+    # Comments & supervisor scoring
+    employee_comment = Column(Text, nullable=True)   # Employee comment when completing goal
+    supervisor_comment = Column(Text, nullable=True) # Supervisor comment when scoring
+    supervisor_score = Column(Float, nullable=True)  # Supervisor manual score 0–5
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -680,6 +686,9 @@ class ReviewTrait(Base):
     scope_type = Column(Enum(TraitScopeType, values_callable=lambda x: [e.value for e in x]), nullable=False, default=TraitScopeType.GLOBAL)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
 
+    # Grade level filtering: JSON list of ints (e.g. [12, 13]) or NULL = all levels
+    applicable_levels = Column(JSON, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -874,6 +883,9 @@ class NotificationType(str, enum.Enum):
     GOAL_ACCEPTANCE_REQUIRED = "goal_acceptance_required"
     GOAL_ACCEPTED = "goal_accepted"
     GOAL_DECLINED = "goal_declined"
+    GOAL_PROGRESS_UPDATED = "goal_progress_updated"
+    GOAL_SCORED = "goal_scored"
+    GOAL_COMPLETED = "goal_completed"
 
     # Initiative notifications
     INITIATIVE_CREATED = "initiative_created"

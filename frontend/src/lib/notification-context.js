@@ -31,6 +31,8 @@ export function NotificationProvider({ children }) {
       'GOAL_APPROVED': ['goals'],
       'GOAL_REJECTED': ['goals'],
       'GOAL_PROGRESS_UPDATED': ['goals'],
+      'GOAL_SCORED': ['goals'],
+      'GOAL_COMPLETED': ['goals'],
       'GOAL_STATUS_CHANGED': ['goals'],
       'GOAL_DEADLINE_APPROACHING': ['goals'],
 
@@ -72,6 +74,11 @@ export function NotificationProvider({ children }) {
         console.log(`Invalidating cache for: ${queryKey}`)
         queryClient.invalidateQueries({ queryKey: [queryKey] })
       })
+
+      // Also invalidate supervisee goals query for any goal-related notification
+      if (newNotification.type?.startsWith('GOAL_')) {
+        queryClient.invalidateQueries({ queryKey: ['goals', 'supervisees'] })
+      }
     } else if (lastMessage.type === 'marked_read') {
       // Update local state when marked as read
       const notificationId = lastMessage.notification_id

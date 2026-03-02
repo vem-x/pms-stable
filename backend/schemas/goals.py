@@ -32,10 +32,9 @@ class KPIItem(BaseModel):
 
 
 class KPIAssessment(BaseModel):
-    """Payload for supervisor to assess a single KPI."""
+    """Payload for employee to submit actual value for a single KPI."""
     id: str
     actual_value: float
-    achieved: bool = False
 
 
 class GoalAssessmentRequest(BaseModel):
@@ -133,6 +132,8 @@ class GoalUpdate(BaseModel):
 class GoalProgressUpdate(BaseModel):
     new_percentage: int = Field(..., ge=0, le=100)
     report: str = Field(..., min_length=1)
+    employee_comment: Optional[str] = None
+    kpi_assessments: Optional[List['KPIAssessment']] = None
 
 class GoalStatusUpdate(BaseModel):
     status: GoalStatus
@@ -164,6 +165,9 @@ class GoalInDB(BaseModel):
     rejection_reason: Optional[str] = None
     achieved_at: Optional[datetime] = None
     discarded_at: Optional[datetime] = None
+    employee_comment: Optional[str] = None
+    supervisor_comment: Optional[str] = None
+    supervisor_score: Optional[float] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -326,6 +330,13 @@ class GoalFreezeLog(BaseModel):
 
     class Config:
         from_attributes = True
+
+class SupervisorScoreRequest(BaseModel):
+    """Supervisor manually scores a completed goal."""
+    supervisor_score: int = Field(..., ge=0, le=5)
+    supervisor_comment: Optional[str] = None
+    achieved_override: Optional[bool] = None  # supervisor can force-set achieved status
+
 
 # Update forward references
 GoalWithChildren.model_rebuild()

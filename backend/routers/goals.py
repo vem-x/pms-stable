@@ -17,7 +17,7 @@ from schemas.goals import (
     Goal as GoalSchema, GoalWithChildren, GoalProgressReport, GoalList, GoalStats,
     GoalApproval, FreezeGoalsRequest, UnfreezeGoalsRequest, FreezeGoalsResponse,
     GoalFreezeLog as GoalFreezeLogSchema,
-    KPIItem, GoalAssessmentRequest,
+    KPIItem, GoalAssessmentRequest, SupervisorScoreRequest,
 )
 from schemas.auth import UserSession
 from utils.auth import get_current_user
@@ -1069,21 +1069,19 @@ async def update_goal_progress(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Allow super-admin or users with goal progress update permission
-    is_super_admin = permission_service.user_has_permission(user, SystemPermissions.SYSTEM_ADMIN)
-    has_progress_permission = permission_service.user_has_permission(user, SystemPermissions.GOAL_PROGRESS_UPDATE)
-
-    if not (is_super_admin or has_progress_permission):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
     goal = db.query(Goal).filter(Goal.id == goal_id).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
 
-    # Super-admin can access any goal, others need organizational access
-    if not is_super_admin:
-        if goal.created_by != user.id:
-            raise HTTPException(status_code=403, detail="Cannot update progress for this goal")
+    is_super_admin = permission_service.user_has_permission(user, SystemPermissions.SYSTEM_ADMIN)
+    has_progress_permission = permission_service.user_has_permission(user, SystemPermissions.GOAL_PROGRESS_UPDATE)
+    is_individual_owner = (
+        goal.scope == GoalScope.INDIVIDUAL and
+        (goal.owner_id == user.id or goal.created_by == user.id)
+    )
+
+    if not (is_super_admin or has_progress_permission or is_individual_owner):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to update this goal's progress")
 
     # Block 100% progress if any linked initiative is not completed
     if progress_data.new_percentage == 100:
@@ -1099,7 +1097,52 @@ async def update_goal_progress(
             raise HTTPException(status_code=400, detail="Failed to update goal progress")
 
         db.refresh(goal)
-        return GoalSchema.from_orm(goal)
+
+        # At 100%: store employee comment, apply KPI actuals, auto-mark COMPLETED
+        if progress_data.new_percentage == 100:
+            if progress_data.employee_comment is not None:
+                goal.employee_comment = progress_data.employee_comment
+
+            if progress_data.kpi_assessments:
+                current_kpis = deserialize_kpis(goal.kpis) or []
+                kpi_map = {k['id']: k for k in current_kpis if isinstance(k, dict)}
+                for a in progress_data.kpi_assessments:
+                    if a.id in kpi_map:
+                        kpi_map[a.id]['actual_value'] = a.actual_value
+                updated_kpis = list(kpi_map.values())
+                goal.kpis = json.dumps(updated_kpis)
+
+                # Auto-calculate achieved flag
+                assessable = [k for k in updated_kpis if k.get('target_value') is not None]
+                assessed = [k for k in assessable if k.get('actual_value') is not None]
+                if assessed:
+                    scores = [
+                        min(k['actual_value'] / k['target_value'], 1.0) if k['target_value'] else 0
+                        for k in assessed
+                    ]
+                    avg_ratio = sum(scores) / len(scores)
+                    goal.achieved = avg_ratio >= 0.8
+                    if goal.achieved:
+                        goal.achieved_at = datetime.utcnow()
+
+            # Auto-mark as COMPLETED
+            if goal.status == GoalStatus.ACTIVE:
+                goal.status = GoalStatus.COMPLETED
+
+            db.commit()
+            db.refresh(goal)
+
+        goal_dict = goal.__dict__.copy()
+        goal_dict = enrich_goal_dict(goal_dict, goal, db)
+
+        # Notify supervisor about progress update
+        try:
+            notification_service = NotificationService(db)
+            notification_service.notify_goal_progress_updated(goal, user)
+        except Exception as e:
+            print(f"Error sending progress notification: {e}")
+
+        return GoalSchema(**goal_dict)
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1440,6 +1483,70 @@ async def assess_goal(
 
     db.commit()
     db.refresh(goal)
+
+    goal_dict = goal.__dict__.copy()
+    goal_dict = enrich_goal_dict(goal_dict, goal, db)
+    return GoalSchema(**goal_dict)
+
+
+@router.put("/{goal_id}/supervisor-score", response_model=GoalSchema)
+async def supervisor_score_goal(
+    goal_id: uuid.UUID,
+    score_data: SupervisorScoreRequest,
+    current_user: UserSession = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    permission_service: UserPermissions = Depends(get_permission_service)
+):
+    """
+    Supervisor manually scores a completed goal.
+    - Goal must be COMPLETED.
+    - Caller must be the supervisor of the goal owner, or have goal_edit permission.
+    - Stores supervisor_score (0–5) and supervisor_comment.
+    """
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    goal = db.query(Goal).filter(Goal.id == goal_id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+
+    if goal.status != GoalStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Only COMPLETED goals can be scored by a supervisor")
+
+    # Permission: supervisor of goal owner OR has goal_edit permission
+    owner = db.query(User).filter(User.id == goal.owner_id).first() if goal.owner_id else None
+    is_supervisor = owner and owner.supervisor_id == user.id
+    has_edit_permission = permission_service.user_has_permission(user, SystemPermissions.GOAL_EDIT)
+
+    if not (is_supervisor or has_edit_permission):
+        raise HTTPException(status_code=403, detail="Only the goal owner's supervisor can score this goal")
+
+    goal.supervisor_score = score_data.supervisor_score
+    goal.supervisor_comment = score_data.supervisor_comment
+
+    # Supervisor can override the achieved status
+    if score_data.achieved_override is not None:
+        goal.achieved = score_data.achieved_override
+        if score_data.achieved_override:
+            goal.status = GoalStatus.ACHIEVED
+            if not goal.achieved_at:
+                from datetime import datetime
+                goal.achieved_at = datetime.utcnow()
+        else:
+            goal.status = GoalStatus.COMPLETED
+            goal.achieved_at = None
+
+    db.commit()
+    db.refresh(goal)
+
+    # Notify goal owner that their goal has been scored
+    try:
+        if owner:
+            notification_service = NotificationService(db)
+            notification_service.notify_goal_scored(goal, user, owner)
+    except Exception as e:
+        print(f"Error sending score notification: {e}")
 
     goal_dict = goal.__dict__.copy()
     goal_dict = enrich_goal_dict(goal_dict, goal, db)

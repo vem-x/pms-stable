@@ -17,6 +17,9 @@ import {
   CheckCircle2,
   CheckCircle,
   XCircle,
+  CircleDot,
+  MinusCircle,
+  Lock,
   User,
   Users,
   Send,
@@ -70,13 +73,15 @@ import {
   useDeleteGoal,
   useApproveGoal,
   useSuperviseeGoals,
+  useMySupervisees,
   useCreateGoalForSupervisee,
   useRespondToGoal,
   useRequestGoalChange,
   useUsers,
   useOrganizations,
   useGoalTags,
-  useAssessGoal
+  useAssessGoal,
+  useSupervisorScore
 } from "@/lib/react-query"
 
 const statusColors = {
@@ -88,21 +93,6 @@ const statusColors = {
   REJECTED: "bg-red-100 text-red-800 border-red-200",
 }
 
-const typeColors = {
-  YEARLY: "bg-purple-100 text-purple-800 border-purple-200",
-  QUARTERLY: "bg-blue-100 text-blue-800 border-blue-200",
-  DEPARTMENTAL: "bg-orange-100 text-orange-800 border-orange-200",
-  INDIVIDUAL: "bg-green-100 text-green-800 border-green-200",
-}
-
-const typeIcons = {
-  YEARLY: Building2,
-  QUARTERLY: Calendar,
-  DEPARTMENTAL: Building2,
-  INDIVIDUAL: User,
-}
-
- 
 const formatStatus = (status) => {
   if (!status) return ''
   return status.split('_').map(word =>
@@ -110,41 +100,77 @@ const formatStatus = (status) => {
   ).join(' ')
 }
 
-function GoalCard({ 
-  goal, 
-  onEdit, 
-  onDelete, 
-  onUpdateProgress, 
-  onStatusChange, 
-  onApprove, 
-  onRespond, 
-  onRequestChange, 
-  canEdit = false, 
-  canApprove = false, 
-  isSuperviseeGoal = false, 
-  onViewDetails, 
-  currentUserId 
+const STATUS_CONFIG = {
+  ACTIVE:           { icon: CircleDot,    className: "text-sky-700 bg-sky-50 border-sky-200",             label: "Active" },
+  COMPLETED:        { icon: CheckCircle2, className: "text-green-700 bg-green-50 border-green-300",        label: "Completed" },
+  ACHIEVED:         { icon: CheckCircle,  className: "text-emerald-50 bg-emerald-700 border-emerald-700",  label: "Achieved" },
+  DISCARDED:        { icon: MinusCircle,  className: "text-gray-500 bg-gray-50 border-gray-200",           label: "Discarded" },
+  PENDING_APPROVAL: { icon: Clock,        className: "text-amber-700 bg-amber-50 border-amber-200",        label: "Pending" },
+  REJECTED:         { icon: XCircle,      className: "text-red-600 bg-red-50 border-red-200",              label: "Rejected" },
+}
+
+function GoalStatusBadge({ status }) {
+  const config = STATUS_CONFIG[status] || STATUS_CONFIG.ACTIVE
+  const Icon = config.icon
+  return (
+    <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded border ${config.className}`}>
+      <Icon className="h-2.5 w-2.5" />
+      {config.label}
+    </span>
+  )
+}
+
+const TYPE_CONFIG_GOAL = {
+  YEARLY:       { label: "Yearly" },
+  QUARTERLY:    { label: "Quarterly" },
+  DEPARTMENTAL: { label: "Departmental" },
+  INDIVIDUAL:   { label: "Individual" },
+}
+
+function GoalTypeBadge({ type }) {
+  const config = TYPE_CONFIG_GOAL[type]
+  if (!config) return null
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded border border-gray-300 text-gray-500 bg-transparent">
+      {config.label}
+    </span>
+  )
+}
+
+function GoalCard({
+  goal,
+  onEdit,
+  onDelete,
+  onUpdateProgress,
+  onStatusChange,
+  onApprove,
+  onRespond,
+  onRequestChange,
+  onScoreGoal,
+  canEdit = false,
+  canApprove = false,
+  isSuperviseeGoal = false,
+  onViewDetails,
+  currentUserId
 }) {
-  const TypeIcon = typeIcons[goal.type]
   const isPendingApproval = goal.status === "PENDING_APPROVAL"
   const isActive = goal.status === "ACTIVE"
   const isAssignedByOther = goal.created_by !== goal.owner_id
   const isOwnGoal = goal.owner_id === currentUserId
 
   return (
-    <Card 
-      className="relative hover:shadow-lg transition-shadow cursor-pointer group flex flex-col h-full"
+    <Card
+      className="relative cursor-pointer group flex flex-col h-full border-border/60 hover:border-border transition-colors duration-150"
       onClick={() => onViewDetails && onViewDetails(goal)}
     >
-      <CardHeader className="space-y-2 pb-3">
+      <CardHeader className="space-y-2 pb-2">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <CardTitle className="text-base leading-tight flex items-start gap-2">
-                    <TypeIcon className="h-4 w-4 text-gray-500 flex-shrink-0 mt-0.5" />
-                    <span className="line-clamp-2 break-words">{goal.title}</span>
+                  <CardTitle className="text-sm font-semibold leading-snug line-clamp-2 break-words">
+                    {goal.title}
                   </CardTitle>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-sm">
@@ -191,6 +217,20 @@ function GoalCard({
                   }}>
                     <XCircle className="mr-2 h-4 w-4" />
                     Decline Goal
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+
+              {/* Supervisor: Score Goal for completed supervisee goals */}
+              {isSuperviseeGoal && goal.status === "COMPLETED" && onScoreGoal && (
+                <>
+                  <DropdownMenuItem onClick={(e) => {
+                    e.stopPropagation();
+                    onScoreGoal(goal);
+                  }}>
+                    <Award className="mr-2 h-4 w-4" />
+                    Score Goal
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                 </>
@@ -246,19 +286,11 @@ function GoalCard({
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={(e) => {
                         e.stopPropagation();
-                        onStatusChange(goal, "COMPLETED");
+                        onStatusChange(goal, "MARK_COMPLETE");
                       }}>
                         <CheckCircle className="mr-2 h-4 w-4" />
                         Mark as Complete
                       </DropdownMenuItem>
-                      {goal.status === "COMPLETED" && goal.scope === "INDIVIDUAL" && goal.kpis?.length > 0 && (
-                        <DropdownMenuItem onClick={(e) => {
-                          e.stopPropagation();
-                          onStatusChange(goal, "ASSESS");
-                        }}>
-                          Assess KPIs
-                        </DropdownMenuItem>
-                      )}
                       <DropdownMenuItem onClick={(e) => {
                         e.stopPropagation();
                         onStatusChange(goal, "DISCARDED");
@@ -282,23 +314,23 @@ function GoalCard({
           </DropdownMenu>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1">
-          <Badge className={`${statusColors[goal.status]} text-xs px-1.5 py-0`}>
-            {formatStatus(goal.status)}
-          </Badge>
-          {goal.achieved && (
-            <Badge className="bg-green-100 text-green-800 border-green-200 text-xs px-1.5 py-0">Achieved</Badge>
-          )}
+        <div className="flex flex-wrap items-center gap-1 mt-1">
+          <GoalStatusBadge status={goal.status} />
+          <GoalTypeBadge type={goal.type} />
           {goal.frozen && (
-            <Badge className="bg-gray-200 text-gray-800 text-xs px-1.5 py-0">Frozen</Badge>
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded border border-slate-300 text-slate-500 bg-slate-50">
+              <Lock className="h-2.5 w-2.5" />Frozen
+            </span>
           )}
           {goal.quarter && goal.year && goal.type === "QUARTERLY" && (
-            <Badge variant="outline" className="text-xs px-1.5 py-0">{goal.quarter} {goal.year}</Badge>
+            <span className="text-[11px] text-muted-foreground border border-border px-1.5 py-0.5 rounded">
+              {goal.quarter} {goal.year}
+            </span>
           )}
           {goal.scope === "DEPARTMENTAL" && goal.organization_name && (
-            <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-xs px-1.5 py-0">
+            <span className="text-[11px] text-muted-foreground border border-border px-1.5 py-0.5 rounded truncate max-w-[120px]">
               {goal.organization_name}
-            </Badge>
+            </span>
           )}
         </div>
       </CardHeader>
@@ -333,38 +365,6 @@ function GoalCard({
           </div>
         )}
         
-        {goal.kpis && goal.kpis.length > 0 && (
-          <div className="space-y-1.5 pt-1">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">KPIs</p>
-            <div className="space-y-1">
-              {goal.kpis.slice(0, 2).map((kpi, ki) => {
-                const desc = typeof kpi === 'string' ? kpi : kpi.description
-                const target = typeof kpi === 'object' && kpi.target_value != null
-                  ? `— ${kpi.target_value}${kpi.target_unit ? ' ' + kpi.target_unit : ''}`
-                  : ''
-                return (
-                  <p key={ki} className="text-xs text-gray-600 leading-snug">
-                    <span className="text-gray-300 mr-1">•</span>
-                    <span>{desc}</span>
-                    {target && <span className="text-gray-400 ml-1">{target}</span>}
-                  </p>
-                )
-              })}
-              {goal.kpis.length > 2 && (
-                <p className="text-xs text-gray-400">+{goal.kpis.length - 2} more KPIs</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-1.5 mt-auto pt-2">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-600 font-medium">Progress</span>
-            <span className="font-semibold text-gray-900">{goal.progress_percentage || 0}%</span>
-          </div>
-          <Progress value={goal.progress_percentage || 0} className="h-1.5" />
-        </div>
-        
         {(goal.start_date || goal.end_date) && (
           <div className="flex items-center gap-2 text-xs text-gray-500 pt-1.5 border-t">
             {goal.start_date && (
@@ -381,17 +381,26 @@ function GoalCard({
             )}
           </div>
         )}
-        
+
         {goal.owner_name && isSuperviseeGoal && (
-          <div className="flex items-center gap-2 pt-1.5 border-t">
-            <Avatar className="h-6 w-6 flex-shrink-0">
-              <AvatarFallback className="text-xs bg-blue-100 text-blue-700">
-                {goal.owner_name.split(' ').map(n => n[0]).join('').toUpperCase()}
+          <div className="flex items-center gap-2 pt-2 mt-auto border-t">
+            <Avatar className="h-5 w-5 flex-shrink-0">
+              <AvatarFallback className="text-[9px] bg-muted text-muted-foreground font-medium">
+                {goal.owner_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-gray-900 truncate">{goal.owner_name}</p>
             </div>
+            {goal.supervisor_score != null ? (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap flex-shrink-0">
+                Score: {goal.supervisor_score}/5
+              </span>
+            ) : goal.status === "COMPLETED" ? (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap flex-shrink-0">
+                Not scored
+              </span>
+            ) : null}
           </div>
         )}
       </CardContent>
@@ -722,11 +731,11 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
                             placeholder="Target value (e.g. 30)"
                           />
                           <Select
-                            value={typeof kpi === 'string' ? '' : (kpi.target_unit || '')}
+                            value={typeof kpi === 'string' ? 'none' : (kpi.target_unit || 'none')}
                             onValueChange={(val) => {
                               const newKpis = [...formData.kpis]
                               const base = typeof kpi === 'string' ? { id: Date.now().toString(), description: kpi, target_value: null } : kpi
-                              newKpis[index] = { ...base, target_unit: val || null }
+                              newKpis[index] = { ...base, target_unit: val === 'none' ? null : val }
                               setFormData({ ...formData, kpis: newKpis })
                             }}
                           >
@@ -734,7 +743,7 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit, canCreateYear
                               <SelectValue placeholder="Unit" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">None</SelectItem>
+                              <SelectItem value="none">None</SelectItem>
                               <SelectItem value="%">%</SelectItem>
                               <SelectItem value="count">count</SelectItem>
                               <SelectItem value="NGN">NGN</SelectItem>
@@ -1172,11 +1181,11 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
                             placeholder="Target value (e.g. 30)"
                           />
                           <Select
-                            value={typeof kpi === 'string' ? '' : (kpi.target_unit || '')}
+                            value={typeof kpi === 'string' ? 'none' : (kpi.target_unit || 'none')}
                             onValueChange={(val) => {
                               const newKpis = [...formData.kpis]
                               const base = typeof kpi === 'string' ? { id: Date.now().toString(), description: kpi, target_value: null } : kpi
-                              newKpis[index] = { ...base, target_unit: val || null }
+                              newKpis[index] = { ...base, target_unit: val === 'none' ? null : val }
                               setFormData({ ...formData, kpis: newKpis })
                             }}
                           >
@@ -1184,7 +1193,7 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
                               <SelectValue placeholder="Unit" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">None</SelectItem>
+                              <SelectItem value="none">None</SelectItem>
                               <SelectItem value="%">%</SelectItem>
                               <SelectItem value="count">count</SelectItem>
                               <SelectItem value="NGN">NGN</SelectItem>
@@ -1382,41 +1391,80 @@ function IndividualGoalForm({ goal, isOpen, onClose, onSubmit, canCreateForSuper
   )
 }
 
-function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit, onAssess }) {
+function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit, initialPercentage }) {
   const [formData, setFormData] = useState({
     new_percentage: goal?.progress_percentage || 0,
     report: "",
+    employee_comment: "",
+    kpiActuals: {},
   })
+  const [kpiError, setKpiError] = useState("")
 
   useEffect(() => {
     if (goal) {
-      setFormData({ new_percentage: goal.progress_percentage || 0, report: "" })
+      const init = {}
+      goal.kpis?.forEach(k => {
+        init[k.id] = { actual_value: k.actual_value ?? '' }
+      })
+      setFormData({
+        new_percentage: initialPercentage ?? goal.progress_percentage ?? 0,
+        report: "",
+        employee_comment: "",
+        kpiActuals: init,
+      })
+      setKpiError("")
     }
   }, [goal?.id])
 
   const hasKpis = (goal?.kpis?.length ?? 0) > 0
   const is100 = formData.new_percentage === 100
+  const isMarkComplete = !!goal?._targetStatus
+
+  const calcKpiScore = (kpi) => {
+    const actual = parseFloat(formData.kpiActuals[kpi.id]?.actual_value)
+    if (isNaN(actual) || !kpi.target_value) return null
+    return (Math.min(actual / kpi.target_value, 1) * 5).toFixed(2)
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault()
     if (is100 && hasKpis) {
-      onClose()
-      if (onAssess) onAssess(goal)
-      return
+      const unfilled = goal.kpis.filter(k => {
+        const val = formData.kpiActuals[k.id]?.actual_value
+        return val === '' || val === null || val === undefined
+      })
+      if (unfilled.length > 0) {
+        setKpiError(`Please enter actual values for all ${unfilled.length} KPI(s) before marking as complete.`)
+        return
+      }
     }
-    onSubmit(formData)
+    setKpiError("")
+    const payload = {
+      new_percentage: formData.new_percentage,
+      report: formData.report,
+    }
+    if (is100) {
+      payload.employee_comment = formData.employee_comment || null
+      if (hasKpis) {
+        payload.kpi_assessments = (goal?.kpis || []).map(k => ({
+          id: k.id,
+          actual_value: parseFloat(formData.kpiActuals[k.id]?.actual_value) || 0,
+        }))
+      }
+    }
+    onSubmit(payload)
     onClose()
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Update Goal Progress</DialogTitle>
             <DialogDescription>Update progress for &quot;{goal?.title}&quot;</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-6 py-4">
+          <div className="grid gap-5 py-4">
             <div className="grid gap-3">
               <Label htmlFor="percentage">Progress Percentage</Label>
               <div className="space-y-2">
@@ -1426,35 +1474,90 @@ function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit, onAssess }) {
                   min="0"
                   max="100"
                   value={formData.new_percentage}
-                  onChange={(e) => setFormData({ ...formData, new_percentage: parseInt(e.target.value) || 0 })}
+                  onChange={(e) => !isMarkComplete && setFormData({ ...formData, new_percentage: parseInt(e.target.value) || 0 })}
+                  readOnly={isMarkComplete}
+                  className={isMarkComplete ? "bg-muted cursor-not-allowed" : ""}
                   required
                 />
                 <Progress value={formData.new_percentage} className="h-2" />
               </div>
             </div>
-            {is100 && hasKpis ? (
-              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>This goal has KPIs. You must enter KPI actuals to mark it as 100% complete.</span>
-              </div>
-            ) : (
+
+            <div className="grid gap-3">
+              <Label htmlFor="report">Progress Report <span className="text-red-500">*</span></Label>
+              <Textarea
+                id="report"
+                value={formData.report}
+                onChange={(e) => setFormData({ ...formData, report: e.target.value })}
+                placeholder="Explain the progress made..."
+                rows={3}
+                required
+              />
+            </div>
+
+            {is100 && (
               <div className="grid gap-3">
-                <Label htmlFor="report">Progress Report <span className="text-red-500">*</span></Label>
+                <Label htmlFor="emp_comment">Your Comment (optional)</Label>
                 <Textarea
-                  id="report"
-                  value={formData.report}
-                  onChange={(e) => setFormData({ ...formData, report: e.target.value })}
-                  placeholder="Explain the progress made..."
-                  rows={5}
-                  required
+                  id="emp_comment"
+                  value={formData.employee_comment}
+                  onChange={(e) => setFormData({ ...formData, employee_comment: e.target.value })}
+                  placeholder="Add any notes or context about completing this goal..."
+                  rows={2}
                 />
+              </div>
+            )}
+
+            {is100 && hasKpis && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 border-t pt-3">
+                  <Target className="h-4 w-4 text-muted-foreground" />
+                  <Label className="text-sm font-semibold">KPI Actuals</Label>
+                  <span className="text-xs text-muted-foreground">(required to complete)</span>
+                </div>
+                {goal.kpis.map(kpi => {
+                  const score = calcKpiScore(kpi)
+                  return (
+                    <div key={kpi.id} className="rounded-md border bg-muted/30 p-3 space-y-2">
+                      <p className="text-xs font-medium text-foreground">{kpi.description}</p>
+                      {kpi.target_value != null && (
+                        <p className="text-[11px] text-muted-foreground">
+                          Target: {kpi.target_value}{kpi.target_unit ? ` ${kpi.target_unit}` : ''}
+                        </p>
+                      )}
+                      <Input
+                          type="number"
+                          step="any"
+                          value={formData.kpiActuals[kpi.id]?.actual_value ?? ''}
+                          onChange={(e) => {
+                            setKpiError("")
+                            setFormData(prev => ({
+                              ...prev,
+                              kpiActuals: {
+                                ...prev.kpiActuals,
+                                [kpi.id]: { ...prev.kpiActuals[kpi.id], actual_value: e.target.value }
+                              }
+                            }))
+                          }}
+                          placeholder="Actual value"
+                          className="h-8 text-sm"
+                        />
+                    </div>
+                  )
+                })}
+                {kpiError && (
+                  <p className="text-sm text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    {kpiError}
+                  </p>
+                )}
               </div>
             )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit">
-              {is100 && hasKpis ? "Continue to KPI Assessment" : "Update Progress"}
+              {is100 ? "Mark as Complete" : "Update Progress"}
             </Button>
           </DialogFooter>
         </form>
@@ -1558,53 +1661,284 @@ function AssessGoalDialog({ goal, isOpen, onClose, onSubmit }) {
   )
 }
 
-function GoalApprovalDialog({ goal, isOpen, onClose, onSubmit }) {
-  const handleApprove = () => {
-    onSubmit({ approved: true, rejection_reason: "" })
-  }
+function ScoreGoalDialog({ goal, isOpen, onClose, onSubmit }) {
+  const [formData, setFormData] = useState({ supervisor_score: "", supervisor_comment: "", achieved_override: null })
 
-  const handleReject = () => {
-    onSubmit({ approved: false, rejection_reason: "" })
+  useEffect(() => {
+    if (goal) {
+      setFormData({
+        supervisor_score: goal.supervisor_score ?? "",
+        supervisor_comment: goal.supervisor_comment ?? "",
+        achieved_override: goal.achieved ?? null,
+      })
+    }
+  }, [goal?.id])
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    onSubmit({
+      supervisor_score: parseInt(formData.supervisor_score, 10),
+      supervisor_comment: formData.supervisor_comment || null,
+      achieved_override: formData.achieved_override,
+    })
+    onClose()
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Score Goal</DialogTitle>
+            <DialogDescription>Score &quot;{goal?.title}&quot; for {goal?.owner_name}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {goal?.kpis?.length > 0 && (
+              <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">KPI Actuals (Employee Filled)</p>
+                {goal.kpis.map(kpi => {
+                  const fmtTarget = kpi.target_value != null
+                    ? `${kpi.target_value}${kpi.target_unit ? ' ' + kpi.target_unit : ''}`
+                    : null
+                  const fmtActual = kpi.actual_value != null
+                    ? `${kpi.actual_value}${kpi.target_unit ? ' ' + kpi.target_unit : ''}`
+                    : '—'
+                  return (
+                    <div key={kpi.id} className="text-xs py-1.5 border-t border-border/40 first:border-0 first:pt-0 space-y-0.5">
+                      <p className="text-foreground font-medium">{kpi.description}</p>
+                      <div className="flex gap-4 text-muted-foreground">
+                        {fmtTarget && <span>Target: <span className="text-foreground">{fmtTarget}</span></span>}
+                        <span>Actual: <span className="text-foreground font-medium">{fmtActual}</span></span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {goal?.employee_comment && (
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{goal.owner_name ? `${goal.owner_name}'s Comment` : "Employee Comment"}</p>
+                <p className="text-sm text-foreground">{goal.employee_comment}</p>
+              </div>
+            )}
+            <div className="grid gap-2">
+              <Label htmlFor="sup_score">Your Score (0–5) <span className="text-red-500">*</span></Label>
+              <Input
+                id="sup_score"
+                type="number"
+                min="0"
+                max="5"
+                step="1"
+                value={formData.supervisor_score}
+                onChange={(e) => setFormData(prev => ({ ...prev, supervisor_score: e.target.value }))}
+                placeholder="0, 1, 2, 3, 4, or 5"
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="sup_comment">Your Comment</Label>
+              <Textarea
+                id="sup_comment"
+                value={formData.supervisor_comment}
+                onChange={(e) => setFormData(prev => ({ ...prev, supervisor_comment: e.target.value }))}
+                placeholder="Add feedback or remarks for the employee..."
+                rows={3}
+              />
+            </div>
+          </div>
+          <div className="rounded-md border p-3 space-y-2 bg-muted/30">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Achievement Override</p>
+              <p className="text-xs text-muted-foreground">The system auto-marks goals as achieved. You can override this below.</p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, achieved_override: true }))}
+                  className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${formData.achieved_override === true ? 'bg-emerald-700 text-white border-emerald-700' : 'border-border text-muted-foreground hover:bg-muted'}`}
+                >
+                  Mark as Achieved
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, achieved_override: false }))}
+                  className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${formData.achieved_override === false ? 'bg-gray-700 text-white border-gray-700' : 'border-border text-muted-foreground hover:bg-muted'}`}
+                >
+                  Not Achieved
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, achieved_override: null }))}
+                  className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${formData.achieved_override === null ? 'bg-blue-600 text-white border-blue-600' : 'border-border text-muted-foreground hover:bg-muted'}`}
+                >
+                  Auto (no override)
+                </button>
+              </div>
+            </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit">Submit Score</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function GoalApprovalDialog({ goal, isOpen, onClose, onSubmit }) {
+  const [rejectionReason, setRejectionReason] = useState("")
+  const [showReject, setShowReject] = useState(false)
+
+  const handleApprove = () => {
+    onSubmit({ approved: true, rejection_reason: "" })
+    setShowReject(false)
+    setRejectionReason("")
+  }
+
+  const handleRejectConfirm = () => {
+    onSubmit({ approved: false, rejection_reason: rejectionReason })
+    setShowReject(false)
+    setRejectionReason("")
+  }
+
+  const handleClose = () => {
+    setShowReject(false)
+    setRejectionReason("")
+    onClose()
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Review Goal</DialogTitle>
           <DialogDescription>
-            Approve or reject this goal
+            Review the full goal details before approving or rejecting
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          <div className="p-4 bg-gray-50 rounded-lg space-y-2">
-            <h3 className="font-semibold">{goal?.title}</h3>
-            {goal?.description && (
-              <p className="text-sm text-gray-600">{goal.description}</p>
-            )}
-            <div className="flex items-center gap-2 text-sm">
-              <Badge>{goal?.quarter} {goal?.year}</Badge>
+        <div className="space-y-4 py-2">
+          {/* Title & meta */}
+          <div className="space-y-1.5">
+            <h3 className="font-semibold text-base leading-snug">{goal?.title}</h3>
+            <div className="flex flex-wrap items-center gap-2">
               {goal?.owner_name && (
-                <span className="text-gray-600">Owner: {goal.owner_name}</span>
+                <span className="text-sm text-muted-foreground">
+                  By: <span className="font-medium text-foreground">{goal.owner_name}</span>
+                </span>
+              )}
+              {goal?.quarter && goal?.year && (
+                <Badge variant="outline" className="text-xs">{goal.quarter} {goal.year}</Badge>
+              )}
+              {goal?.type && (
+                <Badge variant="outline" className="text-xs">{goal.type}</Badge>
               )}
             </div>
           </div>
+
+          {/* Description */}
+          {goal?.description && (
+            <div className="rounded-md border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground font-medium mb-1">Description</p>
+              <div
+                className="text-sm text-foreground prose prose-sm max-w-none"
+                dangerouslySetInnerHTML={{ __html: goal.description }}
+              />
+            </div>
+          )}
+
+          {/* Dates & details */}
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            {goal?.start_date && (
+              <div>
+                <p className="text-xs text-muted-foreground">Start Date</p>
+                <p className="font-medium">{new Date(goal.start_date).toLocaleDateString()}</p>
+              </div>
+            )}
+            {goal?.end_date && (
+              <div>
+                <p className="text-xs text-muted-foreground">End Date</p>
+                <p className="font-medium">{new Date(goal.end_date).toLocaleDateString()}</p>
+              </div>
+            )}
+            {goal?.difficulty_level && (
+              <div>
+                <p className="text-xs text-muted-foreground">Difficulty</p>
+                <p className="font-medium">Level {goal.difficulty_level} / 5</p>
+              </div>
+            )}
+            {goal?.evaluation_method && (
+              <div>
+                <p className="text-xs text-muted-foreground">Evaluation Method</p>
+                <p className="font-medium">{goal.evaluation_method}</p>
+              </div>
+            )}
+          </div>
+
+          {/* KPIs */}
+          {goal?.kpis?.length > 0 && (
+            <div>
+              <p className="text-xs text-muted-foreground font-medium mb-2">
+                KPIs ({goal.kpis.length})
+              </p>
+              <div className="space-y-2">
+                {goal.kpis.map((kpi, i) => (
+                  <div key={kpi.id || i} className="rounded-md border bg-muted/20 p-2.5">
+                    <p className="text-sm font-medium">{kpi.description}</p>
+                    {kpi.target_value != null && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Target: {kpi.target_value}{kpi.target_unit ? ` ${kpi.target_unit}` : ''}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Rejection reason input */}
+          {showReject && (
+            <div className="space-y-2 border-t pt-3">
+              <Label htmlFor="rejection_reason" className="text-sm font-medium">
+                Rejection Reason <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="rejection_reason"
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder="Explain why this goal is being rejected..."
+                rows={3}
+              />
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" size="sm" onClick={() => setShowReject(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleRejectConfirm}
+                  disabled={!rejectionReason.trim()}
+                >
+                  Confirm Reject
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
-        <DialogFooter className="gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="button" variant="destructive" onClick={handleReject}>
-            <XCircle className="h-4 w-4 mr-2" />
-            Reject
-          </Button>
-          <Button type="button" onClick={handleApprove}>
-            <CheckCircle className="h-4 w-4 mr-2" />
-            Approve
-          </Button>
-        </DialogFooter>
+        {!showReject && (
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={() => setShowReject(true)}>
+              <XCircle className="h-4 w-4 mr-2" />
+              Reject
+            </Button>
+            <Button type="button" onClick={handleApprove}>
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Approve
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -1749,7 +2083,6 @@ function RespondToGoalDialog({ goal, isOpen, onClose, onSubmit }) {
 function GoalDetailDialog({ goal, isOpen, onClose, parentGoal, supervisor, supervisee, canApprove, onApprove, currentUserId }) {
   if (!goal) return null
 
-  const TypeIcon = typeIcons[goal.type]
   const isPendingApproval = goal.status === "PENDING_APPROVAL"
   const isAssignedByOther = goal.created_by !== goal.owner_id
   const isOwnersGoal = goal.created_by !== currentUserId && goal.owner_id !== currentUserId
@@ -1769,9 +2102,7 @@ function GoalDetailDialog({ goal, isOpen, onClose, parentGoal, supervisor, super
             <div className="space-y-2 flex-1">
               <DialogTitle className="text-xl">{goal.title}</DialogTitle>
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge className={statusColors[goal.status]}>
-                  {formatStatus(goal.status)}
-                </Badge>
+                <GoalStatusBadge status={goal.status} />
                 {goal.quarter && goal.year && (
                   <Badge variant="outline">{goal.quarter} {goal.year}</Badge>
                 )}
@@ -1836,7 +2167,6 @@ function GoalDetailDialog({ goal, isOpen, onClose, parentGoal, supervisor, super
                       <th className="px-3 py-2 text-left text-gray-500 font-medium">KPI</th>
                       <th className="px-3 py-2 text-center text-gray-500 font-medium w-24">Target</th>
                       <th className="px-3 py-2 text-center text-gray-500 font-medium w-24">Actual</th>
-                      <th className="px-3 py-2 text-center text-gray-500 font-medium w-16">Score /5</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1845,7 +2175,6 @@ function GoalDetailDialog({ goal, isOpen, onClose, parentGoal, supervisor, super
                       const targetVal = typeof kpi === 'object' ? kpi.target_value : null
                       const targetUnit = typeof kpi === 'object' ? kpi.target_unit : null
                       const actualVal = typeof kpi === 'object' ? kpi.actual_value : null
-                      const score = targetVal && actualVal != null ? (Math.min(actualVal / targetVal, 1) * 5).toFixed(2) : null
                       const fmtTarget = targetVal != null ? `${targetVal}${targetUnit ? ' ' + targetUnit : ''}` : '—'
                       const fmtActual = actualVal != null ? `${actualVal}${targetUnit ? ' ' + targetUnit : ''}` : '—'
                       return (
@@ -1853,13 +2182,34 @@ function GoalDetailDialog({ goal, isOpen, onClose, parentGoal, supervisor, super
                           <td className="px-3 py-2 text-gray-700">{desc}</td>
                           <td className="px-3 py-2 text-center text-gray-500">{fmtTarget}</td>
                           <td className="px-3 py-2 text-center text-gray-700 font-medium">{fmtActual}</td>
-                          <td className="px-3 py-2 text-center font-semibold text-gray-800">{score ?? '—'}</td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* Employee Comment */}
+          {goal.employee_comment && (
+            <div className="space-y-1">
+              <h3 className="font-semibold text-sm text-gray-700">Employee Comment</h3>
+              <p className="text-sm text-gray-600">{goal.employee_comment}</p>
+            </div>
+          )}
+
+          {/* Supervisor Score & Comment */}
+          {goal.supervisor_score != null && (
+            <div className="space-y-2 p-3 rounded-md border border-gray-200 bg-gray-50">
+              <h3 className="font-semibold text-sm text-gray-700">Supervisor Assessment</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">Score:</span>
+                <span className="text-sm font-bold text-gray-900">{goal.supervisor_score} / 5</span>
+              </div>
+              {goal.supervisor_comment && (
+                <p className="text-sm text-gray-600">{goal.supervisor_comment}</p>
+              )}
             </div>
           )}
 
@@ -1909,9 +2259,7 @@ function GoalDetailDialog({ goal, isOpen, onClose, parentGoal, supervisor, super
               <div className="space-y-1">
                 <p className="text-sm font-medium text-blue-800">{parentGoal.title}</p>
                 <div className="flex items-center gap-2">
-                  <Badge className={statusColors[parentGoal.status]}>
-                    {formatStatus(parentGoal.status)}
-                  </Badge>
+                  <GoalStatusBadge status={parentGoal.status} />
                 </div>
               </div>
             </div>
@@ -2002,6 +2350,7 @@ export default function GoalsPage() {
   const [isRespondOpen, setIsRespondOpen] = useState(false)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [isAssessOpen, setIsAssessOpen] = useState(false)
+  const [isScoreOpen, setIsScoreOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState(null)
   const [updatingGoal, setUpdatingGoal] = useState(null)
   const [approvingGoal, setApprovingGoal] = useState(null)
@@ -2009,11 +2358,13 @@ export default function GoalsPage() {
   const [respondingGoal, setRespondingGoal] = useState(null)
   const [detailGoal, setDetailGoal] = useState(null)
   const [assessingGoal, setAssessingGoal] = useState(null)
+  const [scoringGoal, setScoringGoal] = useState(null)
   const [activeTab, setActiveTab] = useState("organizational")
   const [searchTerm, setSearchTerm] = useState("")
   const [yearFilter, setYearFilter] = useState("all")
   const [quarterFilter, setQuarterFilter] = useState("all")
   const [superviseeFilter, setSuperviseeFilter] = useState("all")
+  const [scoringFilter, setScoringFilter] = useState("all")
   const [departmentFilter, setDepartmentFilter] = useState("all")
   const [tagFilter, setTagFilter] = useState("all")
 
@@ -2043,18 +2394,19 @@ export default function GoalsPage() {
   const scopeParams = currentScope ? { scope: currentScope } : {}
 
   const { data: goals = [], isLoading } = useGoals(scopeParams)
-  const { data: superviseeGoals = [], refetch: refetchSuperviseeGoals } = useSuperviseeGoals()
+  const [teamTabVisited, setTeamTabVisited] = useState(false)
+  const { data: superviseeGoals = [] } = useSuperviseeGoals({ enabled: teamTabVisited })
   const { data: usersData, isLoading: isLoadingUsers } = useUsers()
   const users = usersData?.users || []
   const { data: organizations = [] } = useOrganizations()
   const { data: tags = [] } = useGoalTags()
 
-  // Refetch supervisee goals when switching to supervisee goals tab
+  // Enable supervisee goals fetch on first visit to team tab
   useEffect(() => {
-    if (activeTab === "team") {
-      refetchSuperviseeGoals()
+    if (activeTab === "team" && !teamTabVisited) {
+      setTeamTabVisited(true)
     }
-  }, [activeTab, refetchSuperviseeGoals])
+  }, [activeTab, teamTabVisited])
 
   const createMutation = useCreateGoal()
   const createForSuperviseeMutation = useCreateGoalForSupervisee()
@@ -2066,12 +2418,10 @@ export default function GoalsPage() {
   const respondMutation = useRespondToGoal()
   const requestChangeMutation = useRequestGoalChange()
   const assessMutation = useAssessGoal()
+  const scoreMutation = useSupervisorScore()
 
-  // Get supervisees for supervisor view
-  const supervisees = useMemo(() => {
-    if (!user?.user_id || !users || users.length === 0) return []
-    return users.filter(u => u.supervisor_id === user.user_id)
-  }, [users, user?.user_id])
+  // Get supervisees for supervisor view via dedicated endpoint
+  const { data: supervisees = [] } = useMySupervisees()
 
   // Consider user a supervisor if they have supervisees OR have supervisee goals
   const isSupervisor = supervisees.length > 0 || superviseeGoals.length > 0
@@ -2204,8 +2554,14 @@ const myIndividualGoals = useMemo(() => {
       filtered = filtered.filter(g => g.owner_id === superviseeFilter)
     }
 
+    if (scoringFilter === "scored") {
+      filtered = filtered.filter(g => g.supervisor_score != null)
+    } else if (scoringFilter === "not_scored") {
+      filtered = filtered.filter(g => g.supervisor_score == null && g.status === "COMPLETED")
+    }
+
     return filtered
-  }, [superviseeGoals, yearFilter, quarterFilter, searchTerm, superviseeFilter])
+  }, [superviseeGoals, yearFilter, quarterFilter, searchTerm, superviseeFilter, scoringFilter])
 
   // Handlers
   const handleCreate = (data) => {
@@ -2241,7 +2597,9 @@ const myIndividualGoals = useMemo(() => {
 
   const handleUpdateProgress = (data) => {
     if (updatingGoal) {
-      updateProgressMutation.mutate({ id: updatingGoal.id, ...data })
+      const goalId = updatingGoal.id
+      const targetStatus = updatingGoal._targetStatus
+      updateProgressMutation.mutate({ id: goalId, ...data })
     }
   }
 
@@ -2322,7 +2680,25 @@ const myIndividualGoals = useMemo(() => {
       setIsAssessOpen(true)
       return
     }
+    // "Mark as Complete" — open progress dialog at 100%
+    if (status === "MARK_COMPLETE") {
+      // Pre-fill progress at 100 then open progress dialog
+      setUpdatingGoal({ ...goal, _targetStatus: status })
+      setIsProgressOpen(true)
+      return
+    }
     updateStatusMutation.mutate({ id: goal.id, status })
+  }
+
+  const handleScoreGoal = (goal) => {
+    setScoringGoal(goal)
+    setIsScoreOpen(true)
+  }
+
+  const handleScoreSubmit = (data) => {
+    if (scoringGoal) {
+      scoreMutation.mutate({ id: scoringGoal.id, ...data })
+    }
   }
 
   const handleDelete = (goal) => {
@@ -2382,7 +2758,7 @@ const myIndividualGoals = useMemo(() => {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className={`grid w-full max-w-4xl ${isSupervisor ? 'grid-cols-4' : 'grid-cols-3'}`}>
+        <TabsList className="grid w-full max-w-4xl grid-cols-4">
           <TabsTrigger value="organizational" className="flex items-center gap-2">
             <Building2 className="h-4 w-4" />
             Organizational
@@ -2395,12 +2771,10 @@ const myIndividualGoals = useMemo(() => {
             <User className="h-4 w-4" />
             My Goals
           </TabsTrigger>
-          {isSupervisor && (
-            <TabsTrigger value="team" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Supervisee Goals
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="team" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Supervisee Goals
+          </TabsTrigger>
         </TabsList>
 
         {/* Organizational Goals Tab */}
@@ -2793,9 +3167,8 @@ const myIndividualGoals = useMemo(() => {
           </Card>
         </TabsContent>
 
-        {/* Supervisee Goals Tab (Supervisors only) */}
-        {isSupervisor && (
-          <TabsContent value="team" className="space-y-6">
+        {/* Supervisee Goals Tab */}
+        <TabsContent value="team" className="space-y-6">
             <div className="flex items-center justify-between">
               <p className="text-sm text-gray-600">
                 Review and approve your supervisees&apos; goals
@@ -2861,7 +3234,19 @@ const myIndividualGoals = useMemo(() => {
                 className="w-[160px]"
               />
 
-              {(searchTerm || yearFilter !== "all" || quarterFilter !== "all" || superviseeFilter !== "all" || tagFilter !== "all") && (
+              <SearchableSelect
+                value={scoringFilter}
+                onValueChange={setScoringFilter}
+                options={[
+                  { value: "all", label: "All (Scoring)" },
+                  { value: "scored", label: "Scored" },
+                  { value: "not_scored", label: "Not Yet Scored" },
+                ]}
+                placeholder="Filter by scoring"
+                className="w-[180px]"
+              />
+
+              {(searchTerm || yearFilter !== "all" || quarterFilter !== "all" || superviseeFilter !== "all" || tagFilter !== "all" || scoringFilter !== "all") && (
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -2870,6 +3255,7 @@ const myIndividualGoals = useMemo(() => {
                     setQuarterFilter("all")
                     setSuperviseeFilter("all")
                     setTagFilter("all")
+                    setScoringFilter("all")
                   }}
                   className="whitespace-nowrap"
                 >
@@ -2898,6 +3284,7 @@ const myIndividualGoals = useMemo(() => {
                         onUpdateProgress={handleUpdateProgressDialog}
                         onStatusChange={handleStatusChange}
                         onApprove={handleApprovalDialog}
+                        onScoreGoal={handleScoreGoal}
                         onViewDetails={handleViewDetails}
                         canEdit={canEditGoals}
                         canApprove={canApproveGoals}
@@ -2911,7 +3298,7 @@ const myIndividualGoals = useMemo(() => {
                     <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">No supervisee goals found</h3>
                     <p className="text-gray-600 mb-4">
-                      {(searchTerm || yearFilter !== "all" || superviseeFilter !== "all")
+                      {(searchTerm || yearFilter !== "all" || superviseeFilter !== "all" || scoringFilter !== "all")
                         ? "Try adjusting your filters"
                         : "Create goals for your supervisees or wait for them to create their own"}
                     </p>
@@ -2924,7 +3311,6 @@ const myIndividualGoals = useMemo(() => {
               </CardContent>
             </Card>
           </TabsContent>
-        )}
       </Tabs>
 
       {/* Dialogs */}
@@ -2969,11 +3355,7 @@ const myIndividualGoals = useMemo(() => {
           setUpdatingGoal(null)
         }}
         onSubmit={handleUpdateProgress}
-        onAssess={(goal) => {
-          setUpdatingGoal(null)
-          setAssessingGoal(goal)
-          setIsAssessOpen(true)
-        }}
+        initialPercentage={updatingGoal?._targetStatus ? 100 : undefined}
       />
 
       <GoalApprovalDialog
@@ -3026,6 +3408,13 @@ const myIndividualGoals = useMemo(() => {
         isOpen={isAssessOpen}
         onClose={() => { setIsAssessOpen(false); setAssessingGoal(null) }}
         onSubmit={handleAssess}
+      />
+
+      <ScoreGoalDialog
+        goal={scoringGoal}
+        isOpen={isScoreOpen}
+        onClose={() => { setIsScoreOpen(false); setScoringGoal(null) }}
+        onSubmit={handleScoreSubmit}
       />
     </div>
   )

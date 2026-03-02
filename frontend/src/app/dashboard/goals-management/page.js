@@ -93,9 +93,9 @@ import { Progress } from "@/components/ui/progress"
  
 
 const STATUS_CONFIG = {
-  ACTIVE:           { icon: CircleDot,    className: "text-sky-700 bg-sky-50 border-sky-200",     label: "Active" },
-  COMPLETED:        { icon: CheckCircle2, className: "text-blue-700 bg-blue-50 border-blue-200",   label: "Completed" },
-  ACHIEVED:         { icon: CheckCircle2, className: "text-emerald-700 bg-emerald-50 border-emerald-200", label: "Achieved" },
+  ACTIVE:           { icon: CircleDot,    className: "text-sky-700 bg-sky-50 border-sky-200",             label: "Active" },
+  COMPLETED:        { icon: CheckCircle2, className: "text-green-700 bg-green-50 border-green-300",        label: "Completed" },
+  ACHIEVED:         { icon: CheckCircle2, className: "text-emerald-50 bg-emerald-700 border-emerald-700",  label: "Achieved" },
   DISCARDED:        { icon: MinusCircle,  className: "text-gray-500 bg-gray-50 border-gray-200",   label: "Discarded" },
   PENDING_APPROVAL: { icon: Clock,        className: "text-amber-700 bg-amber-50 border-amber-200", label: "Pending" },
   REJECTED:         { icon: XCircle,      className: "text-red-600 bg-red-50 border-red-200",      label: "Rejected" },
@@ -902,7 +902,7 @@ function OrganizationalGoalForm({ goal, isOpen, onClose, onSubmit }) {
 function AssessGoalDialog({ goal, isOpen, onClose, onSubmit }) {
   const kpis = Array.isArray(goal?.kpis) ? goal.kpis : []
 
-  // Local state: map kpi.id → { actual_value, achieved }
+  // Local state: map kpi.id → { actual_value }
   const [actuals, setActuals] = useState({})
 
   useEffect(() => {
@@ -911,7 +911,6 @@ function AssessGoalDialog({ goal, isOpen, onClose, onSubmit }) {
       kpis.forEach(k => {
         init[k.id] = {
           actual_value: k.actual_value ?? "",
-          achieved: k.achieved ?? false,
         }
       })
       setActuals(init)
@@ -925,7 +924,6 @@ function AssessGoalDialog({ goal, isOpen, onClose, onSubmit }) {
       .map(k => ({
         id: k.id,
         actual_value: parseFloat(actuals[k.id].actual_value),
-        achieved: actuals[k.id].achieved ?? false,
       }))
     onSubmit({ kpi_assessments })
     onClose()
@@ -996,25 +994,7 @@ function AssessGoalDialog({ goal, isOpen, onClose, onSubmit }) {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 pt-5">
-                    <input
-                      type="checkbox"
-                      id={`achieved-${kpi.id}`}
-                      checked={actuals[kpi.id]?.achieved ?? false}
-                      onChange={(e) => setActuals(prev => ({
-                        ...prev,
-                        [kpi.id]: { ...prev[kpi.id], achieved: e.target.checked }
-                      }))}
-                      className="h-4 w-4 cursor-pointer"
-                    />
-                    <Label htmlFor={`achieved-${kpi.id}`} className="text-sm cursor-pointer">Achieved</Label>
-                  </div>
                 </div>
-                {kpi.target_value && actuals[kpi.id]?.actual_value !== "" && actuals[kpi.id]?.actual_value !== undefined && (
-                  <p className="text-xs text-muted-foreground">
-                    Score: <strong>{Math.min(parseFloat(actuals[kpi.id].actual_value) / kpi.target_value, 1).toFixed(2)} × 5 = {(Math.min(parseFloat(actuals[kpi.id].actual_value) / kpi.target_value, 1) * 5).toFixed(2)}</strong>
-                  </p>
-                )}
               </div>
             ))}
           </div>
@@ -1167,37 +1147,70 @@ function FreezeDialog({ isOpen, onClose, onSubmit, mode = "freeze" }) {
   )
 }
 
-function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit, onAssess }) {
+function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit, initialPercentage }) {
   const [formData, setFormData] = useState({
     new_percentage: goal?.progress_percentage || 0,
     report: "",
+    kpiActuals: {},
   })
+  const [kpiError, setKpiError] = useState("")
 
   // Reset when goal changes
   useEffect(() => {
     if (goal) {
-      setFormData({ new_percentage: goal.progress_percentage || 0, report: "" })
+      const init = {}
+      goal.kpis?.forEach(k => {
+        init[k.id] = { actual_value: k.actual_value ?? '' }
+      })
+      setFormData({
+        new_percentage: initialPercentage ?? goal.progress_percentage ?? 0,
+        report: "",
+        kpiActuals: init,
+      })
+      setKpiError("")
     }
   }, [goal?.id])
 
   const hasKpis = (goal?.kpis?.length ?? 0) > 0
   const is100 = formData.new_percentage === 100
+  const isMarkComplete = !!goal?._targetStatus
+
+  const calcKpiScore = (kpi) => {
+    const actual = parseFloat(formData.kpiActuals[kpi.id]?.actual_value)
+    if (isNaN(actual) || !kpi.target_value) return null
+    return (Math.min(actual / kpi.target_value, 1) * 5).toFixed(2)
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    // If setting 100% on a goal that has KPIs, redirect to KPI assessment
     if (is100 && hasKpis) {
-      onClose()
-      onAssess(goal)
-      return
+      const unfilled = goal.kpis.filter(k => {
+        const val = formData.kpiActuals[k.id]?.actual_value
+        return val === '' || val === null || val === undefined
+      })
+      if (unfilled.length > 0) {
+        setKpiError(`Please enter actual values for all ${unfilled.length} KPI(s) before marking as complete.`)
+        return
+      }
     }
-    onSubmit(formData)
+    setKpiError("")
+    const payload = {
+      new_percentage: formData.new_percentage,
+      report: formData.report,
+    }
+    if (is100 && hasKpis) {
+      payload.kpi_assessments = (goal?.kpis || []).map(k => ({
+        id: k.id,
+        actual_value: parseFloat(formData.kpiActuals[k.id]?.actual_value) || 0,
+      }))
+    }
+    onSubmit(payload)
     onClose()
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Update Goal Progress</DialogTitle>
@@ -1206,7 +1219,7 @@ function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit, onAssess }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-6 py-4">
+          <div className="grid gap-5 py-4">
             <div className="grid gap-3">
               <Label htmlFor="percentage">Progress Percentage</Label>
               <div className="space-y-2">
@@ -1216,34 +1229,70 @@ function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit, onAssess }) {
                   min="0"
                   max="100"
                   value={formData.new_percentage}
-                  onChange={(e) => setFormData({ ...formData, new_percentage: parseInt(e.target.value) || 0 })}
+                  onChange={(e) => !isMarkComplete && setFormData({ ...formData, new_percentage: parseInt(e.target.value) || 0 })}
+                  readOnly={isMarkComplete}
+                  className={isMarkComplete ? "bg-muted cursor-not-allowed" : ""}
                   required
                 />
                 <Progress value={formData.new_percentage} className="h-2" />
               </div>
             </div>
 
-            {is100 && hasKpis && (
-              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>
-                  This goal has KPIs. You must enter KPI actuals to mark it as 100% complete.
-                  Clicking &quot;Continue to KPI Assessment&quot; will open the assessment form.
-                </span>
-              </div>
-            )}
+            <div className="grid gap-3">
+              <Label htmlFor="report">Progress Report <span className="text-red-500">*</span></Label>
+              <Textarea
+                id="report"
+                value={formData.report}
+                onChange={(e) => setFormData({ ...formData, report: e.target.value })}
+                placeholder="Explain the progress made..."
+                rows={3}
+                required
+              />
+            </div>
 
-            {!(is100 && hasKpis) && (
-              <div className="grid gap-3">
-                <Label htmlFor="report">Progress Report <span className="text-red-500">*</span></Label>
-                <Textarea
-                  id="report"
-                  value={formData.report}
-                  onChange={(e) => setFormData({ ...formData, report: e.target.value })}
-                  placeholder="Explain the progress made..."
-                  rows={5}
-                  required
-                />
+            {is100 && hasKpis && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 border-t pt-3">
+                  <Target className="h-4 w-4 text-muted-foreground" />
+                  <Label className="text-sm font-semibold">KPI Actuals</Label>
+                  <span className="text-xs text-muted-foreground">(required to complete)</span>
+                </div>
+                {goal.kpis.map(kpi => {
+                  const score = calcKpiScore(kpi)
+                  return (
+                    <div key={kpi.id} className="rounded-md border bg-muted/30 p-3 space-y-2">
+                      <p className="text-xs font-medium text-foreground">{kpi.description}</p>
+                      {kpi.target_value != null && (
+                        <p className="text-[11px] text-muted-foreground">
+                          Target: {kpi.target_value}{kpi.target_unit ? ` ${kpi.target_unit}` : ''}
+                        </p>
+                      )}
+                      <Input
+                          type="number"
+                          step="any"
+                          value={formData.kpiActuals[kpi.id]?.actual_value ?? ''}
+                          onChange={(e) => {
+                            setKpiError("")
+                            setFormData(prev => ({
+                              ...prev,
+                              kpiActuals: {
+                                ...prev.kpiActuals,
+                                [kpi.id]: { ...prev.kpiActuals[kpi.id], actual_value: e.target.value }
+                              }
+                            }))
+                          }}
+                          placeholder="Actual value"
+                          className="h-8 text-sm"
+                        />
+                    </div>
+                  )
+                })}
+                {kpiError && (
+                  <p className="text-sm text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    {kpiError}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -1253,7 +1302,7 @@ function ProgressUpdateDialog({ goal, isOpen, onClose, onSubmit, onAssess }) {
               Cancel
             </Button>
             <Button type="submit">
-              {is100 && hasKpis ? "Continue to KPI Assessment" : "Update Progress"}
+              {isMarkComplete ? "Mark as Complete" : "Update Progress"}
             </Button>
           </DialogFooter>
         </form>
@@ -1626,6 +1675,10 @@ export default function GoalsManagementPage() {
       // Open the KPI assessment dialog (supervisor enters actuals on a COMPLETED individual goal)
       setAssessingGoal(goal)
       setIsAssessOpen(true)
+    } else if (status === "COMPLETED") {
+      // Open progress dialog at 100% so KPI actuals can be entered before marking complete
+      setUpdatingGoal({ ...goal, _targetStatus: "COMPLETED" })
+      setIsProgressOpen(true)
     } else {
       updateStatusMutation.mutate({ id: goal.id, status })
     }
@@ -2271,11 +2324,7 @@ export default function GoalsManagementPage() {
           setUpdatingGoal(null)
         }}
         onSubmit={handleUpdateProgress}
-        onAssess={(goal) => {
-          setUpdatingGoal(null)
-          setAssessingGoal(goal)
-          setIsAssessOpen(true)
-        }}
+        initialPercentage={updatingGoal?._targetStatus ? 100 : undefined}
       />
 
       <AssessGoalDialog

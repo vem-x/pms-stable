@@ -548,10 +548,34 @@ class NotificationService:
         # TODO: Implement goal notification emails
         print(f"Goal event: {event_type} for {goal.title}")
 
-    def notify_goal_progress_updated(self, goal: Goal, report):
-        """Notify when goal progress is updated"""
-        # TODO: Implement goal progress notification
-        print(f"Goal progress updated: {goal.title}")
+    def notify_goal_progress_updated(self, goal: Goal, updated_by: User):
+        """Notify supervisor when supervisee updates goal progress"""
+        if updated_by.supervisor_id:
+            supervisor = self.db.query(User).filter(User.id == updated_by.supervisor_id).first()
+            if supervisor:
+                percentage = goal.progress_percentage
+                status_note = " — now Completed" if goal.status and goal.status.value == "COMPLETED" else ""
+                self.create_notification(
+                    user_id=supervisor.id,
+                    notification_type=NotificationType.GOAL_PROGRESS_UPDATED,
+                    title="Goal Progress Updated",
+                    message=f"{updated_by.name} updated their goal '{goal.title}' to {percentage}%{status_note}.",
+                    action_url=f"/goals/{goal.id}",
+                    data={"goal_id": str(goal.id), "percentage": percentage},
+                    triggered_by=updated_by.id
+                )
+
+    def notify_goal_scored(self, goal: Goal, scored_by: User, goal_owner: User):
+        """Notify supervisee when supervisor scores their goal"""
+        self.create_notification(
+            user_id=goal_owner.id,
+            notification_type=NotificationType.GOAL_SCORED,
+            title="Your Goal Has Been Scored",
+            message=f"{scored_by.name} has scored your goal '{goal.title}': {goal.supervisor_score}/5.",
+            action_url=f"/goals/{goal.id}",
+            data={"goal_id": str(goal.id), "score": goal.supervisor_score},
+            triggered_by=scored_by.id
+        )
 
     def notify_goal_discarded(self, goal: Goal, reason: str):
         """Notify when goal is discarded"""

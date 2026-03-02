@@ -134,8 +134,19 @@ async def get_review_cycles(
             )
         ).order_by(desc(ReviewCycle.created_at)).all()
 
-    # Convert UUIDs to strings for response
+    # Compute completion_rate dynamically and convert UUIDs to strings
     for cycle in cycles:
+        total = db.query(ReviewAssignment).filter(
+            ReviewAssignment.cycle_id == cycle.id
+        ).count()
+        if total > 0:
+            completed = db.query(ReviewAssignment).filter(
+                ReviewAssignment.cycle_id == cycle.id,
+                ReviewAssignment.status == 'completed'
+            ).count()
+            cycle.completion_rate = round(completed / total * 100, 1)
+        else:
+            cycle.completion_rate = 0.0
         cycle.id = str(cycle.id)
         cycle.created_by = str(cycle.created_by)
 
@@ -238,7 +249,7 @@ async def get_review_cycle(
         "status": cycle.status,
         "created_by": str(cycle.created_by),
         "participants_count": cycle.participants_count or 0,
-        "completion_rate": cycle.completion_rate or 0.0,
+        "completion_rate": _compute_cycle_completion_rate(cycle_id, db),
         "quality_score": cycle.quality_score or 0.0,
         "selected_traits": selected_trait_ids,
         "created_at": cycle.created_at,
@@ -1039,11 +1050,22 @@ async def get_review_assignment(
         reviewee = db.query(User).filter(User.id == assignment.reviewee_id).first()
         reviewee_name = reviewee.name if reviewee else "Unknown"
 
-    # Get questions for this assignment
+    # Determine the reviewee for org/level filtering
+    # For self reviews the reviewee is the reviewer themselves
+    reviewee_id = assignment.reviewee_id if assignment.reviewee_id else current_user.user_id
+    reviewee = db.query(User).filter(User.id == reviewee_id).first()
+
+    # Get traits applicable to the reviewee (respects org hierarchy + grade level)
+    from utils.trait_inheritance import TraitInheritanceService
+    trait_service = TraitInheritanceService(db)
+    applicable_traits = trait_service.get_applicable_traits_for_user(reviewee_id)
+    applicable_trait_ids = {t.id for t in applicable_traits}
+
+    # Intersect with traits actually assigned to this cycle
     cycle_traits = db.query(ReviewCycleTrait).filter(
         ReviewCycleTrait.cycle_id == assignment.cycle_id
     ).all()
-    trait_ids = [ct.trait_id for ct in cycle_traits]
+    trait_ids = [ct.trait_id for ct in cycle_traits if ct.trait_id in applicable_trait_ids]
 
     questions_query = db.query(ReviewQuestion).filter(
         ReviewQuestion.trait_id.in_(trait_ids)
@@ -1263,49 +1285,54 @@ async def get_cycle_user_scores(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get aggregated review scores for all users in a cycle"""
+    """Get review progress and scores for all participants in a cycle.
+    Shows every participant (based on assignments), not just those with final scores.
+    """
 
     # Verify cycle exists
     cycle = db.query(ReviewCycle).filter(ReviewCycle.id == cycle_id).first()
     if not cycle:
         raise HTTPException(status_code=404, detail="Review cycle not found")
 
-    # Get all review scores for this cycle
+    # Get all unique reviewees (participants) who have assignments in this cycle
+    reviewee_rows = db.query(ReviewAssignment.reviewee_id).filter(
+        ReviewAssignment.cycle_id == cycle_id
+    ).distinct().all()
+    reviewee_ids = [row[0] for row in reviewee_rows]
+
+    if not reviewee_ids:
+        return []
+
+    # Load any existing final scores (may be empty until all assignments done)
     review_scores = db.query(ReviewScore).filter(
         ReviewScore.cycle_id == cycle_id
     ).all()
 
-    # Group by user
-    user_scores = {}
+    # Group scores by user
+    score_map = {}
     for score in review_scores:
-        user_id = str(score.user_id)
-        if user_id not in user_scores:
-            user_scores[user_id] = {
-                'user_id': user_id,
-                'trait_scores': {},
-                'total_score': 0,
-                'trait_count': 0
-            }
-
-        # Add trait score (using weighted_score if available, otherwise average of available scores)
+        uid = str(score.user_id)
+        if uid not in score_map:
+            score_map[uid] = {'trait_scores': {}, 'total_score': 0, 'trait_count': 0}
         trait_score = score.weighted_score or score.self_score or 0
-        user_scores[user_id]['trait_scores'][str(score.trait_id)] = trait_score
-        user_scores[user_id]['total_score'] += trait_score
-        user_scores[user_id]['trait_count'] += 1
+        score_map[uid]['trait_scores'][str(score.trait_id)] = trait_score
+        score_map[uid]['total_score'] += trait_score
+        score_map[uid]['trait_count'] += 1
 
-    # Build response with user details
     result = []
-    for user_id, scores in user_scores.items():
-        user = db.query(User).filter(User.id == user_id).first()
+    for reviewee_id in reviewee_ids:
+        user = db.query(User).filter(User.id == reviewee_id).first()
         if not user:
             continue
 
-        # Build user name
+        uid_str = str(reviewee_id)
+
+        # Build display name
         name_parts = [user.first_name]
         if user.middle_name:
             name_parts.append(user.middle_name)
         name_parts.append(user.last_name)
-        user_name = " ".join(name_parts)
+        user_name = " ".join(filter(None, name_parts))
 
         # Get department name
         department_name = None
@@ -1314,22 +1341,58 @@ async def get_cycle_user_scores(
             if org:
                 department_name = org.name
 
-        # Calculate overall score
-        overall_score = scores['total_score'] / scores['trait_count'] if scores['trait_count'] > 0 else 0
+        # Count assignments to determine completion status
+        total_assignments = db.query(ReviewAssignment).filter(
+            ReviewAssignment.cycle_id == cycle_id,
+            ReviewAssignment.reviewee_id == reviewee_id
+        ).count()
 
-        # Check if review is completed (has all required trait scores)
-        completion_status = 'completed' if scores['trait_count'] > 0 else 'pending'
+        completed_assignments = db.query(ReviewAssignment).filter(
+            ReviewAssignment.cycle_id == cycle_id,
+            ReviewAssignment.reviewee_id == reviewee_id,
+            ReviewAssignment.status == 'completed'
+        ).count()
+
+        if completed_assignments == 0:
+            completion_status = 'pending'
+        elif completed_assignments < total_assignments:
+            completion_status = 'in_progress'
+        else:
+            completion_status = 'completed'
+
+        # Scores (may be None/empty until all assignments finished and scored)
+        scores = score_map.get(uid_str, {})
+        trait_scores = scores.get('trait_scores', {})
+        trait_count = scores.get('trait_count', 0)
+        total_score = scores.get('total_score', 0)
+        overall_score = round(total_score / trait_count, 2) if trait_count > 0 else None
 
         result.append({
-            'user_id': user_id,
+            'user_id': uid_str,
             'user_name': user_name,
             'department_name': department_name,
-            'trait_scores': scores['trait_scores'],
-            'overall_score': round(overall_score, 2),
-            'completion_status': completion_status
+            'trait_scores': trait_scores,
+            'overall_score': overall_score,
+            'completion_status': completion_status,
+            'completed_assignments': completed_assignments,
+            'total_assignments': total_assignments,
         })
 
     return result
+
+def _compute_cycle_completion_rate(cycle_id: str, db: Session) -> float:
+    """Compute the percentage of completed assignments for a cycle."""
+    total = db.query(ReviewAssignment).filter(
+        ReviewAssignment.cycle_id == cycle_id
+    ).count()
+    if total == 0:
+        return 0.0
+    completed = db.query(ReviewAssignment).filter(
+        ReviewAssignment.cycle_id == cycle_id,
+        ReviewAssignment.status == 'completed'
+    ).count()
+    return round(completed / total * 100, 1)
+
 
 # Helper functions for advanced features
 
@@ -3051,6 +3114,7 @@ class TraitCreate(BaseModel):
     display_order: Optional[int] = None
     scope_type: str = "global"  # global, directorate, department, unit
     organization_id: Optional[str] = None  # Required for scoped traits
+    applicable_levels: Optional[List[int]] = None  # None = all levels; e.g. [12, 13]
 
 class TraitResponse(BaseModel):
     id: str
@@ -3061,6 +3125,7 @@ class TraitResponse(BaseModel):
     scope_type: str
     organization_id: Optional[str] = None
     organization_name: Optional[str] = None
+    applicable_levels: Optional[List[int]] = None
     created_at: datetime
     question_count: int = 0
 
@@ -3180,6 +3245,7 @@ async def get_traits(
             "scope_type": trait.scope_type.value if trait.scope_type else "global",
             "organization_id": str(trait.organization_id) if trait.organization_id else None,
             "organization_name": organization_name,
+            "applicable_levels": trait.applicable_levels,
             "created_at": trait.created_at,
             "question_count": question_count
         }
@@ -3259,6 +3325,7 @@ async def create_trait(
         display_order=trait_data.display_order,
         scope_type=trait_data.scope_type,
         organization_id=trait_data.organization_id if trait_data.organization_id else None,
+        applicable_levels=trait_data.applicable_levels if trait_data.applicable_levels else None,
         created_by=current_user.user_id
     )
 
@@ -3281,8 +3348,77 @@ async def create_trait(
         scope_type=trait.scope_type.value,
         organization_id=str(trait.organization_id) if trait.organization_id else None,
         organization_name=organization_name,
+        applicable_levels=trait.applicable_levels,
         created_at=trait.created_at,
         question_count=0
+    )
+
+class TraitUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    applicable_levels: Optional[List[int]] = None  # None keeps existing; pass [] to clear (= all levels)
+    clear_levels: bool = False  # Explicit flag to reset applicable_levels to null (all levels)
+
+@router.put("/traits/{trait_id}", response_model=TraitResponse)
+async def update_trait(
+    trait_id: str,
+    trait_data: TraitUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a performance trait's name, description, and/or applicable grade levels.
+    Scope type and organization cannot be changed after creation.
+    """
+    if "review_trait_manage" not in current_user.permissions:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions to edit traits")
+
+    trait = db.query(ReviewTrait).filter(ReviewTrait.id == trait_id).first()
+    if not trait:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trait not found")
+
+    if trait_data.name is not None:
+        # Check uniqueness within same scope
+        existing = db.query(ReviewTrait).filter(
+            ReviewTrait.name == trait_data.name,
+            ReviewTrait.scope_type == trait.scope_type,
+            ReviewTrait.organization_id == trait.organization_id,
+            ReviewTrait.id != trait.id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Trait with this name already exists in this scope")
+        trait.name = trait_data.name
+
+    if trait_data.description is not None:
+        trait.description = trait_data.description
+
+    if trait_data.clear_levels:
+        trait.applicable_levels = None
+    elif trait_data.applicable_levels is not None:
+        trait.applicable_levels = sorted(trait_data.applicable_levels) if trait_data.applicable_levels else None
+
+    db.commit()
+    db.refresh(trait)
+
+    organization_name = None
+    if trait.organization_id:
+        org = db.query(Organization).filter(Organization.id == trait.organization_id).first()
+        organization_name = org.name if org else None
+
+    question_count = db.query(ReviewQuestion).filter(ReviewQuestion.trait_id == trait.id, ReviewQuestion.is_active == True).count()
+
+    return TraitResponse(
+        id=str(trait.id),
+        name=trait.name,
+        description=trait.description,
+        is_active=trait.is_active,
+        display_order=trait.display_order,
+        scope_type=trait.scope_type.value,
+        organization_id=str(trait.organization_id) if trait.organization_id else None,
+        organization_name=organization_name,
+        applicable_levels=trait.applicable_levels,
+        created_at=trait.created_at,
+        question_count=question_count
     )
 
 @router.delete("/traits/{trait_id}")
@@ -3771,10 +3907,17 @@ async def get_review_assignment_form(
     if not cycle:
         raise HTTPException(status_code=404, detail="Review cycle not found")
 
-    # Get traits and questions for this cycle and review type
+    # Get traits applicable to the reviewee (org hierarchy + grade level filtering)
+    from utils.trait_inheritance import TraitInheritanceService
+    trait_service = TraitInheritanceService(db)
+    reviewee_applicable = trait_service.get_applicable_traits_for_user(assignment.reviewee_id or assignment.reviewer_id)
+    reviewee_applicable_ids = {t.id for t in reviewee_applicable}
+
+    # Get traits assigned to this cycle, intersected with reviewee-applicable traits
     cycle_traits = db.query(ReviewCycleTrait).filter(
         ReviewCycleTrait.cycle_id == assignment.cycle_id,
-        ReviewCycleTrait.is_active == True
+        ReviewCycleTrait.is_active == True,
+        ReviewCycleTrait.trait_id.in_(reviewee_applicable_ids)
     ).all()
 
     form_data = {
@@ -3920,6 +4063,22 @@ async def submit_review_assignment(
     # If so, calculate scores
     if not is_draft:
         _calculate_scores_if_ready(assignment.cycle_id, assignment.reviewee_id, db)
+
+        # Update cycle completion_rate
+        try:
+            total = db.query(ReviewAssignment).filter(
+                ReviewAssignment.cycle_id == assignment.cycle_id
+            ).count()
+            completed = db.query(ReviewAssignment).filter(
+                ReviewAssignment.cycle_id == assignment.cycle_id,
+                ReviewAssignment.status == 'completed'
+            ).count()
+            cycle = db.query(ReviewCycle).filter(ReviewCycle.id == assignment.cycle_id).first()
+            if cycle and total > 0:
+                cycle.completion_rate = round(completed / total * 100, 1)
+                db.commit()
+        except Exception as e:
+            print(f"Error updating completion rate: {e}")
 
     return {
         "message": "Progress saved successfully" if is_draft else "Review submitted successfully",

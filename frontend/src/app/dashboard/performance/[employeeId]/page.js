@@ -12,27 +12,12 @@ import { GET } from "@/lib/api"
 
 // ─── Scoring helpers ────────────────────────────────────────────────────────
 
-function calcKpiScore(kpi) {
-  if (kpi.actual_value == null || !kpi.target_value) return null
-  const ratio = Math.min(kpi.actual_value / kpi.target_value, 1.0)
-  return Math.round(ratio * 5 * 100) / 100
-}
-
-function calcGoalScore(goal) {
-  if (!goal.kpis?.length) return null
-  const scorable = goal.kpis.filter(k => k.actual_value != null && k.target_value)
-  if (!scorable.length) return null
-  const avg = scorable.reduce((sum, k) => sum + calcKpiScore(k), 0) / scorable.length
-  return Math.round(avg * 100) / 100
-}
-
-function calcGoalsAggregate(goals) {
+function avgSupervisorScore(goals) {
   const scored = goals
-    .filter(g => g.status?.toUpperCase() !== 'DISCARDED')
-    .map(g => calcGoalScore(g))
-    .filter(s => s != null)
+    .filter(g => g.status?.toUpperCase() !== 'DISCARDED' && g.supervisor_score != null)
+    .map(g => Number(g.supervisor_score))
   if (!scored.length) return null
-  return Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 100) / 100
+  return Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 10) / 10
 }
 
 // ─── UI helpers ─────────────────────────────────────────────────────────────
@@ -169,7 +154,14 @@ export default function EmployeeScorecardPage() {
     )
   }
 
-  const goalsAggregate = calcGoalsAggregate(goals)
+  // Filter goals by review cycle quarter when applicable
+  const cycleQuarter = cycle?.period?.match(/^(Q[1-4])/)?.[1]
+  const cycleYear = cycle?.period?.match(/\b(\d{4})\b/)?.[1]
+  const filteredGoals = cycleQuarter
+    ? goals.filter(g => g.quarter === cycleQuarter && (cycleYear ? String(g.year) === cycleYear : true))
+    : goals
+
+  const goalsAggregate = avgSupervisorScore(filteredGoals)
   const overallScore = [goalsAggregate, employee.competency_score, employee.values_score]
     .filter(s => s != null)
     .reduce((a, b, _, arr) => a + b / arr.length, 0) || null
@@ -233,78 +225,72 @@ export default function EmployeeScorecardPage() {
 
           {/* ── Section A: Goals & KPIs ── */}
           <Section letter="A" title="Goals & Key Performance Indicators">
-            {goals.length === 0 ? (
-              <p className="px-4 py-6 text-center text-xs text-gray-400">No goals assigned for this period</p>
+            {filteredGoals.length === 0 ? (
+              <p className="px-4 py-6 text-center text-xs text-gray-400">
+                {cycleQuarter ? `No ${cycleQuarter} goals assigned for this period` : 'No goals assigned for this period'}
+              </p>
             ) : (
               <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr className="bg-gray-50 text-gray-600 uppercase text-[10px] tracking-wider">
                     <th className="border-b border-gray-200 px-3 py-2 text-left">Goal</th>
-                    <th className="border-b border-gray-200 px-3 py-2 text-left w-28">Reporting Frequency</th>
+                    <th className="border-b border-gray-200 px-3 py-2 text-left w-16">Period</th>
                     <th className="border-b border-gray-200 px-3 py-2 text-left">KPI</th>
                     <th className="border-b border-gray-200 px-3 py-2 text-center w-24">Target</th>
-                    <th className="border-b border-gray-200 px-3 py-2 text-center w-28">Entered Value</th>
-                    <th className="border-b border-gray-200 px-3 py-2 text-right w-20">Score /5</th>
+                    <th className="border-b border-gray-200 px-3 py-2 text-center w-24">Actual</th>
+                    <th className="border-b border-gray-200 px-3 py-2 text-right w-16">Sup. Score</th>
+                    <th className="border-b border-gray-200 px-3 py-2 text-left w-36">Employee Comment</th>
+                    <th className="border-b border-gray-200 px-3 py-2 text-left w-36">Supervisor Comment</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {goals.map((goal, gi) => {
-                    const goalScore = calcGoalScore(goal)
+                  {filteredGoals.map((goal) => {
                     const isDiscarded = goal.status?.toUpperCase() === 'DISCARDED'
                     const kpiCount = goal.kpis?.length || 1
-                    const period = goal.quarter ? `${goal.quarter} ${goal.year}` : goal.type
+                    const period = goal.quarter || (goal.type === 'YEARLY' ? 'Yearly' : goal.type)
 
                     return (goal.kpis?.length > 0 ? goal.kpis : [{}]).map((kpi, ki) => {
-                      const kpiScore = calcKpiScore(kpi)
                       const isFirstKpi = ki === 0
-                      
+
                       return (
                         <tr
                           key={kpi.id ? `${goal.id}-kpi-${kpi.id}` : `${goal.id}-nokpi-${ki}`}
                           className={`border-b border-gray-100 ${isDiscarded ? 'opacity-50' : ''}`}
                         >
-                          {/* Goal column - only show on first KPI row */}
                           {isFirstKpi && (
-                            <td
-                              className="px-3 py-2 align-top border-r border-gray-200 bg-gray-50 font-semibold text-gray-800"
-                              rowSpan={kpiCount}
-                            >
+                            <td className="px-3 py-2 align-top border-r border-gray-200 bg-gray-50 font-semibold text-gray-800" rowSpan={kpiCount}>
                               {goal.title}
                             </td>
                           )}
-                          
-                          {/* Reporting Frequency column - only show on first KPI row */}
                           {isFirstKpi && (
-                            <td
-                              className="px-3 py-2 align-top border-r border-gray-200 bg-gray-50 text-gray-600 text-sm"
-                              rowSpan={kpiCount}
-                            >
-                              <div className="flex flex-col gap-1">
-                                <div>{period}</div>
-                                <div className="text-gray-400 text-[10px]">{goal.type || '—'}</div>
-                              </div>
+                            <td className="px-3 py-2 align-top border-r border-gray-200 bg-gray-50 text-gray-600 font-medium" rowSpan={kpiCount}>
+                              {period}
                             </td>
                           )}
-                          
-                          {/* KPI column */}
                           <td className="px-3 py-1.5 text-gray-600">
                             {kpi.description || <span className="italic text-gray-400">No KPI</span>}
                           </td>
-                          
-                          {/* Target column */}
                           <td className="px-3 py-1.5 text-center text-gray-500 tabular-nums">
                             {kpi.target_value != null ? fmtTarget(kpi) : '—'}
                           </td>
-                          
-                          {/* Entered Value column */}
                           <td className="px-3 py-1.5 text-center text-gray-700 tabular-nums font-medium">
                             {fmtActual(kpi)}
                           </td>
-                          
-                          {/* Score column */}
-                          <td className={`px-3 py-1.5 text-right font-semibold tabular-nums ${kpi.target_value ? scoreColor(kpiScore) : 'text-gray-400'}`}>
-                            {kpi.target_value && kpiScore != null ? kpiScore.toFixed(2) : '—'}
-                          </td>
+                          {isFirstKpi && (
+                            <td className="px-3 py-2 align-top text-right font-semibold tabular-nums text-emerald-700" rowSpan={kpiCount}>
+                              {goal.supervisor_score != null ? `${Number(goal.supervisor_score).toFixed(1)} / 5` : '—'}
+                            </td>
+                          )}
+                          {isFirstKpi && (
+                            <td className="px-3 py-2 align-top text-gray-600 italic" rowSpan={kpiCount}>
+                              {goal.employee_comment || <span className="text-gray-300">—</span>}
+                            </td>
+                          )}
+                          {isFirstKpi && (
+                            <td className="px-3 py-2 align-top text-gray-600 italic" rowSpan={kpiCount}>
+                              {goal.supervisor_comment || <span className="text-gray-300">—</span>}
+                            </td>
+                          )}
                         </tr>
                       )
                     })
@@ -312,11 +298,11 @@ export default function EmployeeScorecardPage() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-gray-50 font-semibold text-xs border-t border-gray-300">
-                    <td colSpan={5} className="px-3 py-2 text-right uppercase text-gray-500 text-[10px] tracking-wider">
-                      Goals & KPIs Score
+                    <td colSpan={7} className="px-3 py-2 text-right uppercase text-gray-500 text-[10px] tracking-wider">
+                      Avg. Supervisor Score
                     </td>
                     <td className={`px-3 py-2 text-right font-bold text-sm ${scoreColor(goalsAggregate)}`}>
-                      {goalsAggregate != null ? `${goalsAggregate.toFixed(2)} / 5` : '—'}
+                      {goalsAggregate != null ? `${goalsAggregate.toFixed(1)} / 5` : '—'}
                     </td>
                   </tr>
                 </tfoot>
@@ -409,7 +395,7 @@ export default function EmployeeScorecardPage() {
             <table className="w-full text-xs border-collapse">
               <tbody>
                 {[
-                  { label: "Goals & KPIs Score", value: goalsAggregate },
+                  { label: "Avg. Supervisor Score", value: goalsAggregate },
                   { label: "Weighted Competency Score", value: employee.competency_score },
                   { label: "Core Values Score", value: employee.values_score },
                 ].map(({ label, value }) => (

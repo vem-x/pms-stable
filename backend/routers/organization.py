@@ -53,7 +53,11 @@ async def get_organizations(
     if parent_id is not None:
         query = query.filter(Organization.parent_id == parent_id)
 
-    return query.all()
+    orgs = query.all()
+    for org in orgs:
+        org.user_count = db.query(User).filter(User.organization_id == org.id).count()
+        org.child_count = db.query(Organization).filter(Organization.parent_id == org.id).count()
+    return orgs
 
 @router.get("/tree", response_model=OrganizationTree)
 async def get_organization_tree(

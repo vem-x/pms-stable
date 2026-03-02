@@ -39,7 +39,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Checkbox } from "@/components/ui/checkbox"
 import { SearchableSelect } from "@/components/ui/searchable-select"
 import { useAuth, PermissionGuard } from "@/lib/auth-context"
-import { GET, POST, DELETE } from "@/lib/api"
+import { GET, POST, PUT, DELETE } from "@/lib/api"
 import { toast } from "sonner"
 
 const statusColors = {
@@ -90,6 +90,7 @@ function TraitManagement() {
   const [showTraitDialog, setShowTraitDialog] = useState(false)
   const [showQuestionDialog, setShowQuestionDialog] = useState(false)
   const [selectedTrait, setSelectedTrait] = useState(null)
+  const [editingTrait, setEditingTrait] = useState(null)
   const [questions, setQuestions] = useState([])
   const [traitFormType, setTraitFormType] = useState('value') // 'value' or 'competency'
   const [searchTerm, setSearchTerm] = useState("")
@@ -139,6 +140,18 @@ function TraitManagement() {
         error.message ||
         'Failed to delete. This value/competency may be in use by active review cycles.'
       toast.error(errorMessage)
+    }
+  }
+
+  const saveTrait = async (traitId, updateData) => {
+    try {
+      await PUT(`/api/reviews/traits/${traitId}`, updateData)
+      toast.success('Updated successfully')
+      fetchTraits()
+      setEditingTrait(null)
+    } catch (error) {
+      console.error('Error updating trait:', error)
+      toast.error(error.response?.data?.detail || 'Failed to update')
     }
   }
 
@@ -292,6 +305,15 @@ function TraitManagement() {
                 {trait.organization_name && (
                   <span className="text-xs text-muted-foreground">{trait.organization_name}</span>
                 )}
+                {trait.applicable_levels && trait.applicable_levels.length > 0 ? (
+                  <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200 text-xs">
+                    Levels: {trait.applicable_levels.join(', ')}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">
+                    All Levels
+                  </Badge>
+                )}
               </div>
               {trait.description && <CardDescription className="text-sm mt-3">{trait.description}</CardDescription>}
             </CardHeader>
@@ -306,6 +328,14 @@ function TraitManagement() {
                 >
                   <Settings className="w-3 h-3 mr-1" />
                   Manage Questions
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEditingTrait(trait)}
+                >
+                  <Edit className="w-3 h-3 mr-1" />
+                  Edit
                 </Button>
                 <Button
                   size="sm"
@@ -334,6 +364,12 @@ function TraitManagement() {
         }}
         onSubmit={createTrait}
         initialType={traitFormType}
+      />
+
+      <EditTraitDialog
+        trait={editingTrait}
+        onClose={() => setEditingTrait(null)}
+        onSubmit={(updateData) => saveTrait(editingTrait.id, updateData)}
       />
 
       <QuestionDialog
@@ -368,10 +404,13 @@ function TraitManagement() {
 
 // Enhanced Review Cycle Form
 function EnhancedReviewCycleForm({ isOpen, onClose, onSubmit }) {
+  const currentYear = new Date().getFullYear()
   const [formData, setFormData] = useState({
     name: "",
     type: "quarterly",
     period: "",
+    quarter: "Q1",
+    year: String(currentYear),
     start_date: "",
     end_date: ""
   })
@@ -398,8 +437,14 @@ function EnhancedReviewCycleForm({ isOpen, onClose, onSubmit }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
+    const isQuarterly = formData.type === "quarterly"
+    const period = isQuarterly
+      ? `${formData.quarter} ${formData.year}`
+      : formData.period
     const submitData = {
-      ...formData,
+      name: formData.name,
+      type: formData.type,
+      period,
       start_date: formData.start_date + 'T00:00:00',
       end_date: formData.end_date + 'T23:59:59'
     }
@@ -410,6 +455,8 @@ function EnhancedReviewCycleForm({ isOpen, onClose, onSubmit }) {
       name: "",
       type: "quarterly",
       period: "",
+      quarter: "Q1",
+      year: String(currentYear),
       start_date: "",
       end_date: ""
     })
@@ -456,16 +503,44 @@ function EnhancedReviewCycleForm({ isOpen, onClose, onSubmit }) {
               </div>
             </div>
 
-            <div>
-              <Label htmlFor="period">Period</Label>
-              <Input
-                id="period"
-                value={formData.period}
-                onChange={(e) => setFormData(prev => ({ ...prev, period: e.target.value }))}
-                placeholder="Q1-2024"
-                required
-              />
-            </div>
+            {formData.type === "quarterly" ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Quarter</Label>
+                  <Select value={formData.quarter} onValueChange={(v) => setFormData(prev => ({ ...prev, quarter: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Q1">Q1</SelectItem>
+                      <SelectItem value="Q2">Q2</SelectItem>
+                      <SelectItem value="Q3">Q3</SelectItem>
+                      <SelectItem value="Q4">Q4</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="year">Year</Label>
+                  <Input
+                    id="year"
+                    type="number"
+                    value={formData.year}
+                    onChange={(e) => setFormData(prev => ({ ...prev, year: e.target.value }))}
+                    placeholder="2026"
+                    required
+                  />
+                </div>
+              </div>
+            ) : (
+              <div>
+                <Label htmlFor="period">Period</Label>
+                <Input
+                  id="period"
+                  value={formData.period}
+                  onChange={(e) => setFormData(prev => ({ ...prev, period: e.target.value }))}
+                  placeholder="FY-2026"
+                  required={formData.type !== "quarterly"}
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -603,15 +678,20 @@ function CycleDetailView({ cycle, onBack, onViewAllReviews }) {
 }
 
 // Simple dialog components (you can move these to separate files later)
+const ALL_GRADE_LEVELS = Array.from({ length: 17 }, (_, i) => i + 1)
+
 function TraitDialog({ open, onClose, onSubmit, initialType = 'value' }) {
   const [formData, setFormData] = useState({
     name: "",
     description: "",
     scope_type: initialType === 'value' ? "global" : "department",
-    organization_id: null
+    organization_id: null,
+    applicable_levels: null  // null = all levels
   })
   const [organizations, setOrganizations] = useState([])
   const [filteredOrganizations, setFilteredOrganizations] = useState([])
+  const [allLevels, setAllLevels] = useState(true)
+  const [selectedLevels, setSelectedLevels] = useState([])
 
   useEffect(() => {
     const fetchOrganizations = async () => {
@@ -624,12 +704,16 @@ function TraitDialog({ open, onClose, onSubmit, initialType = 'value' }) {
     }
     if (open) {
       fetchOrganizations()
-      // Set initial scope based on type when dialog opens
-      setFormData(prev => ({
-        ...prev,
+      // Reset form when dialog opens
+      setFormData({
+        name: "",
+        description: "",
         scope_type: initialType === 'value' ? "global" : "department",
-        organization_id: initialType === 'value' ? null : prev.organization_id
-      }))
+        organization_id: null,
+        applicable_levels: null
+      })
+      setAllLevels(true)
+      setSelectedLevels([])
     }
   }, [open, initialType])
 
@@ -646,10 +730,19 @@ function TraitDialog({ open, onClose, onSubmit, initialType = 'value' }) {
     label: org.name
   }))
 
+  const toggleLevel = (level) => {
+    setSelectedLevels(prev =>
+      prev.includes(level) ? prev.filter(l => l !== level) : [...prev, level]
+    )
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
-    onSubmit(formData)
-    setFormData({ name: "", description: "", scope_type: "global", organization_id: null })
+    const payload = {
+      ...formData,
+      applicable_levels: allLevels ? null : (selectedLevels.length > 0 ? selectedLevels.sort((a, b) => a - b) : null)
+    }
+    onSubmit(payload)
   }
 
   const scopeRequiresOrg = formData.scope_type !== "global"
@@ -747,12 +840,194 @@ function TraitDialog({ open, onClose, onSubmit, initialType = 'value' }) {
                 />
               </div>
             )}
+
+            <div>
+              <Label>Applicable Grade Levels</Label>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="all-levels"
+                  checked={allLevels}
+                  onChange={(e) => {
+                    setAllLevels(e.target.checked)
+                    if (e.target.checked) setSelectedLevels([])
+                  }}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <label htmlFor="all-levels" className="text-sm font-medium cursor-pointer">
+                  All Levels
+                </label>
+              </div>
+              {!allLevels && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {ALL_GRADE_LEVELS.map(level => (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => toggleLevel(level)}
+                      className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                        selectedLevels.includes(level)
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-background text-muted-foreground border-border hover:border-primary'
+                      }`}
+                    >
+                      Level {level}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                {allLevels
+                  ? 'This trait applies to all employees regardless of grade level.'
+                  : selectedLevels.length === 0
+                    ? 'Select at least one level, or check "All Levels".'
+                    : `Applies only to grade levels: ${selectedLevels.sort((a, b) => a - b).join(', ')}`}
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit">
               {initialType === 'value' ? 'Create Value' : 'Create Competency'}
             </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function EditTraitDialog({ trait, onClose, onSubmit }) {
+  const [name, setName] = useState("")
+  const [description, setDescription] = useState("")
+  const [allLevels, setAllLevels] = useState(true)
+  const [selectedLevels, setSelectedLevels] = useState([])
+
+  // Populate form when trait changes
+  useEffect(() => {
+    if (trait) {
+      setName(trait.name || "")
+      setDescription(trait.description || "")
+      const levels = trait.applicable_levels
+      if (levels && levels.length > 0) {
+        setAllLevels(false)
+        setSelectedLevels(levels)
+      } else {
+        setAllLevels(true)
+        setSelectedLevels([])
+      }
+    }
+  }, [trait])
+
+  const toggleLevel = (level) => {
+    setSelectedLevels(prev =>
+      prev.includes(level) ? prev.filter(l => l !== level) : [...prev, level]
+    )
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    const payload = { name, description }
+    if (allLevels) {
+      payload.clear_levels = true
+    } else {
+      payload.applicable_levels = selectedLevels.length > 0 ? selectedLevels.sort((a, b) => a - b) : null
+      payload.clear_levels = selectedLevels.length === 0
+    }
+    onSubmit(payload)
+  }
+
+  const scopeLabel = trait?.scope_type
+    ? trait.scope_type.charAt(0).toUpperCase() + trait.scope_type.slice(1)
+    : ''
+
+  return (
+    <Dialog open={!!trait} onOpenChange={onClose}>
+      <DialogContent className="max-w-[520px]">
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Edit Value / Competency</DialogTitle>
+            <DialogDescription>
+              Update the name, description, or applicable grade levels.
+              {trait?.organization_name && (
+                <span className="block mt-1 text-xs">
+                  Scope: <strong>{scopeLabel}</strong> — {trait.organization_name}
+                </span>
+              )}
+              {!trait?.organization_name && trait?.scope_type === 'global' && (
+                <span className="block mt-1 text-xs">Scope: <strong>Global</strong></span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="edit-name">Name</Label>
+              <Input
+                id="edit-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-description">Description</Label>
+              <Textarea
+                id="edit-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+
+            <div>
+              <Label>Applicable Grade Levels</Label>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="edit-all-levels"
+                  checked={allLevels}
+                  onChange={(e) => {
+                    setAllLevels(e.target.checked)
+                    if (e.target.checked) setSelectedLevels([])
+                  }}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <label htmlFor="edit-all-levels" className="text-sm font-medium cursor-pointer">
+                  All Levels
+                </label>
+              </div>
+              {!allLevels && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {ALL_GRADE_LEVELS.map(level => (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => toggleLevel(level)}
+                      className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                        selectedLevels.includes(level)
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-background text-muted-foreground border-border hover:border-primary'
+                      }`}
+                    >
+                      Level {level}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                {allLevels
+                  ? 'Applies to all employees regardless of grade level.'
+                  : selectedLevels.length === 0
+                    ? 'Select at least one level, or check "All Levels".'
+                    : `Applies only to grade levels: ${selectedLevels.sort((a, b) => a - b).join(', ')}`}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit">Save Changes</Button>
           </DialogFooter>
         </form>
       </DialogContent>

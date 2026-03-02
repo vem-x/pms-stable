@@ -543,9 +543,26 @@ export default function ReviewCycleDetailPage() {
                         <span className="font-semibold">{review.overall_score?.toFixed(1) || '-'}</span>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={review.completion_status === 'completed' ? 'default' : 'secondary'}>
-                          {review.completion_status}
-                        </Badge>
+                        <div className="flex flex-col gap-1">
+                          <Badge
+                            className={
+                              review.completion_status === 'completed'
+                                ? 'bg-green-100 text-green-800'
+                                : review.completion_status === 'in_progress'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-gray-100 text-gray-600'
+                            }
+                          >
+                            {review.completion_status === 'completed' ? 'Completed'
+                              : review.completion_status === 'in_progress' ? 'In Progress'
+                              : 'Pending'}
+                          </Badge>
+                          {review.total_assignments > 0 && (
+                            <span className="text-xs text-gray-400">
+                              {review.completed_assignments}/{review.total_assignments} submitted
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Button

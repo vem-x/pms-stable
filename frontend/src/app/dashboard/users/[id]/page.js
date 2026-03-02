@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo, useState, useCallback } from "react"
+import React, { useMemo, useState, useCallback, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
   ArrowLeft,
@@ -50,9 +50,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useUser, useGoals, useOrganizations, useRoles, useUpdateUser, useUpdateUserStatus } from "@/lib/react-query"
-import { GET, POST } from "@/lib/api"
+import { GET, POST, users as usersApi } from "@/lib/api"
+import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { UserForm } from "@/components/dashboard/UserForm"
+import { Label } from "@/components/ui/label"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 
 const statusColors = {
   PENDING_ACTIVATION: "bg-blue-100 text-blue-800",
@@ -196,6 +199,78 @@ function ConfirmDialog({ isOpen, onClose, onConfirm, title, description }) {
   )
 }
 
+function ChangeSupervisorDialog({ isOpen, onClose, user, onFetchSupervisors }) {
+  const [supervisorId, setSupervisorId] = useState("")
+  const [supervisors, setSupervisors] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (!isOpen || !user?.organization_id) return
+    setLoading(true)
+    onFetchSupervisors(user.organization_id, user.level)
+      .then(list => setSupervisors(list || []))
+      .finally(() => setLoading(false))
+    setSupervisorId(user.supervisor_id || "")
+  }, [isOpen, user?.id])
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await usersApi.assignSupervisor(user.id, supervisorId || null)
+      queryClient.invalidateQueries({ queryKey: ['users', user.id] })
+      toast.success("Supervisor updated successfully")
+      onClose()
+    } catch (err) {
+      toast.error(err.message || "Failed to update supervisor")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle>Change Supervisor</DialogTitle>
+          <DialogDescription>Select a new supervisor for {user?.name}</DialogDescription>
+        </DialogHeader>
+        <div className="py-4 space-y-3">
+          <Label className="text-sm font-medium">Supervisor</Label>
+          {loading ? (
+            <div className="text-sm text-muted-foreground">Loading eligible supervisors...</div>
+          ) : (
+            <SearchableSelect
+              value={supervisorId}
+              onValueChange={setSupervisorId}
+              placeholder="Select supervisor (or leave empty to remove)"
+              searchPlaceholder="Search by name..."
+              options={supervisors.map(s => ({
+                value: s.id,
+                label: `${s.name}${s.level ? ` (Grade ${s.level})` : ''}${s.job_title ? ` — ${s.job_title}` : ''}`,
+              }))}
+            />
+          )}
+          {supervisorId && supervisors.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Selected: <span className="font-medium text-foreground">
+                {supervisors.find(s => s.id === supervisorId)?.name}
+              </span>
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || loading}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function UserDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -203,6 +278,7 @@ export default function UserDetailPage() {
 
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', description: '', onConfirm: () => {} })
   const [isEditFormOpen, setIsEditFormOpen] = useState(false)
+  const [isSupervisorDialogOpen, setIsSupervisorDialogOpen] = useState(false)
 
   const { data: user, isLoading: isLoadingUser } = useUser(userId)
   const { data: userGoals = [], isLoading: isLoadingGoals } = useGoals({ owner_id: userId })
@@ -257,6 +333,7 @@ export default function UserDetailPage() {
       updateMutation.mutate({ id: user.id, ...data })
     }
   }
+
 
   const handleResendInvite = () => {
     if (!user) return
@@ -381,6 +458,10 @@ export default function UserDetailPage() {
                   <DropdownMenuItem onClick={handleEditUser}>
                     <Edit className="mr-2 h-4 w-4" />
                     Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsSupervisorDialogOpen(true)}>
+                    <User className="mr-2 h-4 w-4" />
+                    Change Supervisor
                   </DropdownMenuItem>
 
                   {/* Status Actions */}
@@ -524,6 +605,59 @@ export default function UserDetailPage() {
         </Card>
       </div>
 
+      {/* Account Information */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Account Information</CardTitle>
+          <CardDescription>Organization and role details</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label className="text-muted-foreground text-xs">Email</Label>
+              <p className="font-medium text-sm mt-0.5">{user.email}</p>
+            </div>
+            <div>
+              <Label className="text-muted-foreground text-xs">Job Title</Label>
+              <p className="font-medium text-sm mt-0.5">{user.job_title || 'Not set'}</p>
+            </div>
+            <div>
+              <Label className="text-muted-foreground text-xs">Organization</Label>
+              <p className="font-medium text-sm mt-0.5">{user.organization_name || organization}</p>
+            </div>
+            <div>
+              <Label className="text-muted-foreground text-xs">Role</Label>
+              <p className="font-medium text-sm mt-0.5">{user.role_name || 'Not set'}</p>
+            </div>
+            <div>
+              <Label className="text-muted-foreground text-xs">Grade Level</Label>
+              <p className="font-medium text-sm mt-0.5">{user.level || 'Not set'}</p>
+            </div>
+            <div>
+              <Label className="text-muted-foreground text-xs">Status</Label>
+              <p className="font-medium text-sm mt-0.5 capitalize">{user.status?.replace(/_/g, ' ')}</p>
+            </div>
+            <div className="md:col-span-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-muted-foreground text-xs">Supervisor</Label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs px-2"
+                  onClick={() => setIsSupervisorDialogOpen(true)}
+                >
+                  <Edit className="h-3 w-3 mr-1" />
+                  Change
+                </Button>
+              </div>
+              <p className="font-medium text-sm mt-0.5">
+                {user.supervisor_name || <span className="text-muted-foreground italic">No supervisor assigned</span>}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Additional Info */}
       {(user.skillset || user.address) && (
         <Card>
@@ -616,6 +750,14 @@ export default function UserDetailPage() {
         onSubmit={handleUpdate}
         organizations={organizations}
         roles={roles}
+        onFetchSupervisors={fetchEligibleSupervisors}
+      />
+
+      {/* Change Supervisor Dialog */}
+      <ChangeSupervisorDialog
+        isOpen={isSupervisorDialogOpen}
+        onClose={() => setIsSupervisorDialogOpen(false)}
+        user={user}
         onFetchSupervisors={fetchEligibleSupervisors}
       />
 

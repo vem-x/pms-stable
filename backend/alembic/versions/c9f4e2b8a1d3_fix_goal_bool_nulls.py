@@ -23,7 +23,7 @@ from sqlalchemy import text
 
 
 revision: str = 'c9f4e2b8a1d3'
-down_revision: str = 'fa88177f1e32'
+down_revision = None
 branch_labels = None
 depends_on = None
 
