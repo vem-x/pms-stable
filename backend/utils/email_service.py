@@ -1,15 +1,20 @@
 """
-Email service using Resend
+Email service using SMTP (Office365 / GovMail)
 Handles all email notifications for the PMS
 """
 
 import os
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import List, Optional
-import resend
 
-# Configure Resend
-resend.api_key = "re_b5tqpN9T_6PCcJKM3cWwP4EDAFsv2rZhy"
-FROM_EMAIL = "vem@spryntr.co"
+# SMTP configuration from environment
+SMTP_HOST = os.getenv("SMTP_HOST", "mail.govmail.gbb.com.ng")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", SMTP_USERNAME)
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 class EmailService:
@@ -22,20 +27,26 @@ class EmailService:
         html: str,
         reply_to: Optional[str] = None
     ):
-        """Send email using Resend"""
+        """Send email via SMTP (STARTTLS)"""
         try:
-            params = {
-                "from": FROM_EMAIL,
-                "to": to,
-                "subject": subject,
-                "html": html,
-            }
-
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = FROM_EMAIL
+            msg["To"] = ", ".join(to)
             if reply_to:
-                params["reply_to"] = reply_to
+                msg["Reply-To"] = reply_to
 
-            response = resend.Emails.send(params)
-            return response
+            msg.attach(MIMEText(html, "html"))
+
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as server:
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+                server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.sendmail(FROM_EMAIL, to, msg.as_string())
+
+            print(f"Email sent to {to} — subject: {subject}")
+            return {"success": True, "to": to}
         except Exception as e:
             print(f"Error sending email: {e}")
             raise
