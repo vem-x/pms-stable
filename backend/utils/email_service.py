@@ -29,6 +29,7 @@ class EmailService:
     ):
         """Send email via SMTP (SSL)"""
         import ssl
+        print(f"[EMAIL] Host={SMTP_HOST} Port={SMTP_PORT} User={SMTP_USERNAME} From={FROM_EMAIL} To={to}")
         try:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
@@ -40,14 +41,17 @@ class EmailService:
             msg.attach(MIMEText(html, "html"))
 
             context = ssl.create_default_context()
+            print(f"[EMAIL] Connecting to {SMTP_HOST}:{SMTP_PORT} via SMTP_SSL...")
             with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=30) as server:
+                print(f"[EMAIL] Connected. Logging in as {SMTP_USERNAME}...")
                 server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                print(f"[EMAIL] Login OK. Sending...")
                 server.sendmail(FROM_EMAIL, to, msg.as_string())
 
-            print(f"Email sent to {to} — subject: {subject}")
+            print(f"[EMAIL] Sent successfully to {to} — subject: {subject}")
             return {"success": True, "to": to}
         except Exception as e:
-            print(f"Error sending email: {e}")
+            print(f"[EMAIL] FAILED — Host={SMTP_HOST} Port={SMTP_PORT} User={SMTP_USERNAME} Error={e}")
             raise
 
     @staticmethod
