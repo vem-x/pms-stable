@@ -27,7 +27,8 @@ class EmailService:
         html: str,
         reply_to: Optional[str] = None
     ):
-        """Send email via SMTP (STARTTLS)"""
+        """Send email via SMTP (SSL)"""
+        import ssl
         try:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
@@ -38,10 +39,8 @@ class EmailService:
 
             msg.attach(MIMEText(html, "html"))
 
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as server:
-                server.ehlo()
-                server.starttls()
-                server.ehlo()
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=30) as server:
                 server.login(SMTP_USERNAME, SMTP_PASSWORD)
                 server.sendmail(FROM_EMAIL, to, msg.as_string())
 
