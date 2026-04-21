@@ -148,14 +148,15 @@ export default function UsersPage() {
       isOpen: true,
       title: 'Resend Onboarding Invite',
       description: `Send a new onboarding invite to ${user.email}?`,
-      onConfirm: async () => {
-        try {
-          await POST(`/api/users/${user.id}/resend-onboarding`, {})
-          toast.success(`Onboarding invite successfully resent to ${user.email}`)
-        } catch (error) {
-          console.error('Error resending invite:', error)
-          toast.error(error.message || 'Failed to resend invite')
-        }
+      onConfirm: () => {
+        toast.promise(
+          POST(`/api/users/${user.id}/resend-onboarding`, {}),
+          {
+            loading: `Sending invite to ${user.email}...`,
+            success: `Invite sent to ${user.email}`,
+            error: (err) => err.message || 'Failed to send invite',
+          }
+        )
       }
     })
   }
@@ -165,14 +166,15 @@ export default function UsersPage() {
       isOpen: true,
       title: 'Send Password Reset Link',
       description: `Send a password reset link to ${user.email}?`,
-      onConfirm: async () => {
-        try {
-          await POST(`/api/users/${user.id}/send-password-reset`, {})
-          toast.success(`Password reset link successfully sent to ${user.email}`)
-        } catch (error) {
-          console.error('Error sending password reset:', error)
-          toast.error(error.message || 'Failed to send password reset link')
-        }
+      onConfirm: () => {
+        toast.promise(
+          POST(`/api/users/${user.id}/send-password-reset`, {}),
+          {
+            loading: `Sending reset link to ${user.email}...`,
+            success: `Password reset link sent to ${user.email}`,
+            error: (err) => err.message || 'Failed to send password reset link',
+          }
+        )
       }
     })
   }
@@ -182,16 +184,18 @@ export default function UsersPage() {
       isOpen: true,
       title: 'Delete User Permanently',
       description: `Are you sure you want to permanently delete ${user.name} (${user.email})? This action cannot be undone and will remove all associated data.`,
-      onConfirm: async () => {
-        try {
-          const { DELETE } = await import('@/lib/api')
-          await DELETE(`/api/users/${user.id}`)
-          toast.success(`User ${user.name} has been permanently deleted`)
-          refetchUsers()
-        } catch (error) {
-          console.error('Error deleting user:', error)
-          toast.error(error.message || 'Failed to delete user. They may have associated data that must be removed first.')
-        }
+      onConfirm: () => {
+        toast.promise(
+          import('@/lib/api').then(({ DELETE }) => DELETE(`/api/users/${user.id}`)),
+          {
+            loading: `Deleting ${user.name}...`,
+            success: () => {
+              data?.refetch?.()
+              return `${user.name} has been permanently deleted`
+            },
+            error: (err) => err.message || 'Failed to delete user. They may have associated data that must be removed first.',
+          }
+        )
       }
     })
   }

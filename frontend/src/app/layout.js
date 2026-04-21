@@ -25,6 +25,7 @@ export default function RootLayout({ children }) {
               {children}
               <Toaster
                 position="top-right"
+                richColors
                 toastOptions={{
                   duration: 4000,
                 }}
