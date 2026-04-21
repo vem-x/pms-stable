@@ -27,32 +27,70 @@ class EmailService:
         html: str,
         reply_to: Optional[str] = None
     ):
-        """Send email via SMTP (SSL)"""
+        """Send email via SMTP — tries SMTP_SSL first, falls back to STARTTLS"""
         import ssl
         print(f"[EMAIL] Host={SMTP_HOST} Port={SMTP_PORT} User={SMTP_USERNAME} From={FROM_EMAIL} To={to}")
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = FROM_EMAIL
+        msg["To"] = ", ".join(to)
+        if reply_to:
+            msg["Reply-To"] = reply_to
+        msg.attach(MIMEText(html, "html"))
+
+        # Permissive SSL context — internal relays often use self-signed certs
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        last_error = None
+
+        # Attempt 1: SMTP_SSL (direct TLS)
         try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = FROM_EMAIL
-            msg["To"] = ", ".join(to)
-            if reply_to:
-                msg["Reply-To"] = reply_to
-
-            msg.attach(MIMEText(html, "html"))
-
-            context = ssl.create_default_context()
-            print(f"[EMAIL] Connecting to {SMTP_HOST}:{SMTP_PORT} via SMTP_SSL...")
-            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=30) as server:
-                print(f"[EMAIL] Connected. Logging in as {SMTP_USERNAME}...")
-                server.login(SMTP_USERNAME, SMTP_PASSWORD)
-                print(f"[EMAIL] Login OK. Sending...")
+            print(f"[EMAIL] Attempt 1 — SMTP_SSL to {SMTP_HOST}:{SMTP_PORT}")
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx, timeout=15) as server:
+                if SMTP_USERNAME:
+                    server.login(SMTP_USERNAME, SMTP_PASSWORD)
                 server.sendmail(FROM_EMAIL, to, msg.as_string())
-
-            print(f"[EMAIL] Sent successfully to {to} — subject: {subject}")
+            print(f"[EMAIL] Sent OK via SMTP_SSL to {to}")
             return {"success": True, "to": to}
         except Exception as e:
-            print(f"[EMAIL] FAILED — Host={SMTP_HOST} Port={SMTP_PORT} User={SMTP_USERNAME} Error={e}")
-            raise
+            last_error = e
+            print(f"[EMAIL] SMTP_SSL failed: {e}")
+
+        # Attempt 2: STARTTLS (plain connect + upgrade)
+        try:
+            print(f"[EMAIL] Attempt 2 — STARTTLS to {SMTP_HOST}:{SMTP_PORT}")
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+                server.ehlo()
+                server.starttls(context=ctx)
+                server.ehlo()
+                if SMTP_USERNAME:
+                    server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.sendmail(FROM_EMAIL, to, msg.as_string())
+            print(f"[EMAIL] Sent OK via STARTTLS to {to}")
+            return {"success": True, "to": to}
+        except Exception as e:
+            last_error = e
+            print(f"[EMAIL] STARTTLS failed: {e}")
+
+        # Attempt 3: Plain SMTP (no encryption — last resort)
+        try:
+            print(f"[EMAIL] Attempt 3 — plain SMTP to {SMTP_HOST}:{SMTP_PORT}")
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+                server.ehlo()
+                if SMTP_USERNAME:
+                    server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.sendmail(FROM_EMAIL, to, msg.as_string())
+            print(f"[EMAIL] Sent OK via plain SMTP to {to}")
+            return {"success": True, "to": to}
+        except Exception as e:
+            last_error = e
+            print(f"[EMAIL] Plain SMTP failed: {e}")
+
+        print(f"[EMAIL] All attempts failed — Host={SMTP_HOST} Port={SMTP_PORT} LastError={last_error}")
+        raise last_error
 
     @staticmethod
     def send_onboarding_email(user_email: str, user_name: str, onboarding_token: str):

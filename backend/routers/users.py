@@ -901,7 +901,14 @@ async def resend_onboarding_email(
         admin_id=requester.id,
         action="onboarding_token_regenerated",
         old_value=None,
-        new_value={"token_expires_at": token_expiration.isoformat()}
+        new_value={
+            "sent_to_email": user.email,
+            "sent_to_name": user.name,
+            "sent_to_job_title": user.job_title,
+            "sent_by_email": requester.email,
+            "sent_by_name": requester.name,
+            "token_expires_at": token_expiration.isoformat(),
+        }
     )
     db.add(history)
 
@@ -962,7 +969,14 @@ async def send_password_reset_link(
         admin_id=requester.id,
         action="password_reset_token_generated",
         old_value=None,
-        new_value={"token_expires_at": token_expiration.isoformat()}
+        new_value={
+            "sent_to_email": user.email,
+            "sent_to_name": user.name,
+            "sent_to_job_title": user.job_title,
+            "sent_by_email": requester.email,
+            "sent_by_name": requester.name,
+            "token_expires_at": token_expiration.isoformat(),
+        }
     )
     db.add(history)
 
