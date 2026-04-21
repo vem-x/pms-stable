@@ -918,7 +918,11 @@ async def resend_onboarding_email(
     # Resend onboarding email
     from utils.notifications import NotificationService
     notification_service = NotificationService(db)
-    notification_service.notify_user_created(user, onboarding_token)
+    try:
+        notification_service.notify_user_created(user, onboarding_token)
+    except Exception as e:
+        print(f"✗ Failed to send onboarding email: {e}")
+        raise HTTPException(status_code=502, detail=f"Token generated but email delivery failed: {str(e)}")
 
     return {
         "message": "Onboarding email resent successfully",
@@ -986,7 +990,11 @@ async def send_password_reset_link(
     # Send password reset email
     from utils.notifications import NotificationService
     notification_service = NotificationService(db)
-    notification_service.notify_password_reset(user, reset_token)
+    try:
+        notification_service.notify_password_reset(user, reset_token)
+    except Exception as e:
+        print(f"✗ Failed to send password reset email: {e}")
+        raise HTTPException(status_code=502, detail=f"Token generated but email delivery failed: {str(e)}")
 
     return {
         "message": "Password reset link sent successfully",

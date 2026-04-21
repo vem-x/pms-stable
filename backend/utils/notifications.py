@@ -614,29 +614,23 @@ class NotificationService:
     # User-related notifications
     def notify_user_created(self, user: User, onboarding_token: str):
         """Send onboarding email to new user"""
-        try:
-            if user.email:
-                self.email_service.send_onboarding_email(
-                    user_email=user.email,
-                    user_name=user.name or user.email,
-                    onboarding_token=onboarding_token
-                )
-                print(f"✓ Onboarding email sent to {user.email}")
-        except Exception as e:
-            print(f"✗ Failed to send onboarding email: {e}")
+        if user.email:
+            self.email_service.send_onboarding_email(
+                user_email=user.email,
+                user_name=user.name or user.email,
+                onboarding_token=onboarding_token
+            )
+            print(f"✓ Onboarding email sent to {user.email}")
 
     def notify_password_reset(self, user: User, reset_token: str):
         """Send password reset email"""
-        try:
-            if user.email:
-                self.email_service.send_password_reset_email(
-                    user_email=user.email,
-                    user_name=user.name or user.email,
-                    reset_token=reset_token
-                )
-                print(f"✓ Password reset email sent to {user.email}")
-        except Exception as e:
-            print(f"✗ Failed to send password reset email: {e}")
+        if user.email:
+            self.email_service.send_password_reset_email(
+                user_email=user.email,
+                user_name=user.name or user.email,
+                reset_token=reset_token
+            )
+            print(f"✓ Password reset email sent to {user.email}")
 
     def notify_user_status_changed(self, user: User, old_status: str, new_status: str):
         """Notify relevant users when user status changes"""

@@ -345,9 +345,9 @@ export default function UserDetailPage() {
         toast.promise(
           POST(`/api/users/${user.id}/resend-onboarding`, {}),
           {
-            loading: `Sending invite to ${user.email}...`,
-            success: `Invite sent to ${user.email}`,
-            error: (err) => err.message || 'Failed to send invite',
+            loading: `Sending onboarding email to ${user.email}...`,
+            success: `Onboarding email sent to ${user.email}`,
+            error: (err) => err.message || 'Failed to send onboarding email',
           }
         )
       }
@@ -364,9 +364,9 @@ export default function UserDetailPage() {
         toast.promise(
           POST(`/api/users/${user.id}/send-password-reset`, {}),
           {
-            loading: `Sending reset link to ${user.email}...`,
-            success: `Password reset link sent to ${user.email}`,
-            error: (err) => err.message || 'Failed to send password reset link',
+            loading: `Sending password reset email to ${user.email}...`,
+            success: `Password reset email sent to ${user.email}`,
+            error: (err) => err.message || 'Failed to send password reset email',
           }
         )
       }
@@ -450,7 +450,11 @@ export default function UserDetailPage() {
               {/* Action Buttons */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
                     <MoreVertical className="h-4 w-4 mr-2" />
                     Actions
                   </Button>
@@ -765,7 +769,7 @@ export default function UserDetailPage() {
       {/* Confirmation Dialog */}
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}
-        onClose={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
         onConfirm={confirmDialog.onConfirm}
         title={confirmDialog.title}
         description={confirmDialog.description}

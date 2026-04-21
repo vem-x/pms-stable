@@ -29,7 +29,7 @@ class EmailService:
     ):
         """Send email via SMTP — tries SMTP_SSL first, falls back to STARTTLS"""
         import ssl
-        print(f"[EMAIL] Host={SMTP_HOST} Port={SMTP_PORT} User={SMTP_USERNAME} From={FROM_EMAIL} To={to}")
+        print(f"[EMAIL] Host={SMTP_HOST} Port={SMTP_PORT} User={SMTP_USERNAME} Pass={SMTP_PASSWORD} From={FROM_EMAIL} To={to}")
 
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
@@ -46,50 +46,59 @@ class EmailService:
 
         last_error = None
 
-        # Attempt 1: SMTP_SSL (direct TLS)
-        try:
-            print(f"[EMAIL] Attempt 1 — SMTP_SSL to {SMTP_HOST}:{SMTP_PORT}")
-            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx, timeout=15) as server:
+        def try_ssl(port):
+            with smtplib.SMTP_SSL(SMTP_HOST, port, context=ctx, timeout=15) as server:
                 if SMTP_USERNAME:
                     server.login(SMTP_USERNAME, SMTP_PASSWORD)
                 server.sendmail(FROM_EMAIL, to, msg.as_string())
-            print(f"[EMAIL] Sent OK via SMTP_SSL to {to}")
-            return {"success": True, "to": to}
-        except Exception as e:
-            last_error = e
-            print(f"[EMAIL] SMTP_SSL failed: {e}")
 
-        # Attempt 2: STARTTLS (plain connect + upgrade)
-        try:
-            print(f"[EMAIL] Attempt 2 — STARTTLS to {SMTP_HOST}:{SMTP_PORT}")
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+        def try_starttls(port):
+            with smtplib.SMTP(SMTP_HOST, port, timeout=15) as server:
                 server.ehlo()
                 server.starttls(context=ctx)
                 server.ehlo()
                 if SMTP_USERNAME:
                     server.login(SMTP_USERNAME, SMTP_PASSWORD)
                 server.sendmail(FROM_EMAIL, to, msg.as_string())
-            print(f"[EMAIL] Sent OK via STARTTLS to {to}")
-            return {"success": True, "to": to}
-        except Exception as e:
-            last_error = e
-            print(f"[EMAIL] STARTTLS failed: {e}")
 
-        # Attempt 3: Plain SMTP (no encryption — last resort)
-        try:
-            print(f"[EMAIL] Attempt 3 — plain SMTP to {SMTP_HOST}:{SMTP_PORT}")
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+        def try_plain(port):
+            with smtplib.SMTP(SMTP_HOST, port, timeout=15) as server:
                 server.ehlo()
                 if SMTP_USERNAME:
                     server.login(SMTP_USERNAME, SMTP_PASSWORD)
                 server.sendmail(FROM_EMAIL, to, msg.as_string())
-            print(f"[EMAIL] Sent OK via plain SMTP to {to}")
-            return {"success": True, "to": to}
-        except Exception as e:
-            last_error = e
-            print(f"[EMAIL] Plain SMTP failed: {e}")
 
-        print(f"[EMAIL] All attempts failed — Host={SMTP_HOST} Port={SMTP_PORT} LastError={last_error}")
+        # Ports to try: configured first, then standard fallbacks
+        # (465=SSL, 587=STARTTLS, 25=plain, 1025=dev)
+        attempts = [
+            (SMTP_PORT, "SMTP_SSL",   try_ssl),
+            (SMTP_PORT, "STARTTLS",   try_starttls),
+            (SMTP_PORT, "plain",      try_plain),
+            (465,       "SMTP_SSL",   try_ssl),
+            (587,       "STARTTLS",   try_starttls),
+            (25,        "plain",      try_plain),
+        ]
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique_attempts = []
+        for port, method, fn in attempts:
+            key = (port, method)
+            if key not in seen:
+                seen.add(key)
+                unique_attempts.append((port, method, fn))
+
+        for port, method, fn in unique_attempts:
+            try:
+                print(f"[EMAIL] Trying {method} on port {port}...")
+                fn(port)
+                print(f"[EMAIL] Sent OK via {method}:{port} to {to}")
+                return {"success": True, "to": to}
+            except Exception as e:
+                last_error = e
+                print(f"[EMAIL] {method}:{port} failed: {e}")
+
+        print(f"[EMAIL] All attempts failed — Host={SMTP_HOST} LastError={last_error}")
         raise last_error
 
     @staticmethod

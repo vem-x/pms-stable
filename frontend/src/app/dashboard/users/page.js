@@ -152,9 +152,9 @@ export default function UsersPage() {
         toast.promise(
           POST(`/api/users/${user.id}/resend-onboarding`, {}),
           {
-            loading: `Sending invite to ${user.email}...`,
-            success: `Invite sent to ${user.email}`,
-            error: (err) => err.message || 'Failed to send invite',
+            loading: `Sending onboarding email to ${user.email}...`,
+            success: `Onboarding email sent to ${user.email}`,
+            error: (err) => err.message || 'Failed to send onboarding email',
           }
         )
       }
@@ -170,9 +170,9 @@ export default function UsersPage() {
         toast.promise(
           POST(`/api/users/${user.id}/send-password-reset`, {}),
           {
-            loading: `Sending reset link to ${user.email}...`,
-            success: `Password reset link sent to ${user.email}`,
-            error: (err) => err.message || 'Failed to send password reset link',
+            loading: `Sending password reset email to ${user.email}...`,
+            success: `Password reset email sent to ${user.email}`,
+            error: (err) => err.message || 'Failed to send password reset email',
           }
         )
       }
@@ -401,11 +401,16 @@ export default function UsersPage() {
                               variant="ghost"
                               size="sm"
                               onClick={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => e.stopPropagation()}
                             >
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuContent
+                            align="end"
+                            onClick={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                          >
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEdit(user); }}>
                               <Edit className="mr-2 h-4 w-4" />
                               Edit
@@ -546,7 +551,7 @@ export default function UsersPage() {
 
         <ConfirmDialog
           isOpen={confirmDialog.isOpen}
-          onClose={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
+          onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
           onConfirm={confirmDialog.onConfirm}
           title={confirmDialog.title}
           description={confirmDialog.description}

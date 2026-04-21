@@ -28,6 +28,9 @@ export default function RootLayout({ children }) {
                 richColors
                 toastOptions={{
                   duration: 4000,
+                  classNames: {
+                    loading: 'border-blue-200 bg-blue-50 text-blue-900 [&>div>svg]:text-blue-500',
+                  },
                 }}
               />
             </NotificationProvider>
