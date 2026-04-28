@@ -381,8 +381,9 @@ async def upload_profile_image(
     upload_dir = Path("uploads/profiles")
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate unique filename
-    file_extension = file.filename.split(".")[-1]
+    # Generate unique filename — derive extension from validated content_type, never from filename
+    _ext_map = {"image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp"}
+    file_extension = _ext_map.get(file.content_type, "jpg")
     unique_filename = f"{user.id}_{uuid.uuid4().hex[:8]}.{file_extension}"
     file_path = upload_dir / unique_filename
 

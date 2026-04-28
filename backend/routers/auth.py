@@ -24,6 +24,7 @@ from utils.auth import (
     revoke_all_user_refresh_tokens, REFRESH_TOKEN_EXPIRE_DAYS
 )
 from utils.permissions import UserPermissions
+from utils.limiter import limiter
 
 router = APIRouter(tags=["authentication"])
 
@@ -39,9 +40,10 @@ class TokenResponse(BaseModel):
     expires_in: int  # Access token expiry in seconds
 
 @router.post("/login")
+@limiter.limit("10/minute")
 async def login(
-    login_data: LoginRequest,
     request: Request,
+    login_data: LoginRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -140,7 +142,9 @@ async def logout(
         return {"message": "Successfully logged out"}
 
 @router.post("/onboard")
+@limiter.limit("10/minute")
 async def onboard_user(
+    request: Request,
     onboarding_data: OnboardingRequest,
     db: Session = Depends(get_db)
 ):

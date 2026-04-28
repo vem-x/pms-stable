@@ -1162,13 +1162,25 @@ async def upload_initiative_document(
     if not initiative_service.get_initiative_visibility(user, initiative_id):
         raise HTTPException(status_code=403, detail="Cannot access this initiative")
 
+    # Validate file type and size
+    allowed_types = {
+        "application/pdf", "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "image/jpeg", "image/png", "text/plain"
+    }
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="File type not allowed")
+    if file.size and file.size > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 10MB)")
+
     # Create uploads directory if it doesn't exist
     upload_dir = "uploads/initiatives"
     os.makedirs(upload_dir, exist_ok=True)
 
-    # Generate unique filename
-    file_extension = file.filename.split('.')[-1] if '.' in file.filename else ''
-    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+    # Generate unique filename — use os.path.splitext, never split('.')
+    from pathlib import Path as _Path
+    file_extension = _Path(file.filename).suffix if file.filename else ""
+    unique_filename = f"{uuid.uuid4()}{file_extension}"
     file_path = os.path.join(upload_dir, unique_filename)
 
     # Save file

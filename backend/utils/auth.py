@@ -15,7 +15,7 @@ from models import User, UserStatus, RefreshToken
 from schemas.auth import UserSession
 from utils.permissions import UserPermissions
 
-SECRET_KEY = config("JWT_SECRET_KEY", default="your-secret-key-change-in-production")
+SECRET_KEY = config("JWT_SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour for access tokens
 REFRESH_TOKEN_EXPIRE_DAYS = 7  # 7 days for refresh tokens
